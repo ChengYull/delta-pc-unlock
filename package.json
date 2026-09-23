@@ -22,9 +22,6 @@
       "storage": {
         "enabled": true
       },
-      "clipboard": {
-        "enabled": true
-      },
       "leaderboard": {
         "enabled": true
       }

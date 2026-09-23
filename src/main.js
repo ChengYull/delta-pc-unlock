@@ -64,8 +64,6 @@ const dom = {
   btnAgain: document.getElementById('btn-again'),
   btnBack: document.getElementById('btn-back'),
   btnTable: document.getElementById('btn-table'),
-  btnCopy: document.getElementById('btn-copy'),
-  btnReset: document.getElementById('btn-reset'),
   footStats: document.getElementById('foot-stats'),
   footNote: document.getElementById('foot-note'),
 };
@@ -91,8 +89,6 @@ const state = {
   /** 单轮结算展示：{ ok, code } */
   reveal: null,
   storageFallback: false,
-  resetArmed: false,
-  resetArmId: 0,
   /**
    * 练习模式的会话累计：只在内存里，不落 storage。
    * 离开练习模式或关闭页面就归零，符合「练习不计成绩」的定位。
@@ -866,81 +862,11 @@ function toggleTable() {
  * 等于绕过了听力考核。后续会做成「仅音效」的独立排行榜模式（隐藏摩斯图案，键盘全程可用），
  * 在那之前不暴露音效按钮。morse.js 里的播放器与 playMorseSequence 保留给那个模式复用，
  * 单行的「试听」按钮不受影响。
+ *
+ * 页脚的「复制成绩」「重置记录」两个按钮也已去掉：成绩在页脚与常驻榜单里都能看到，
+ * 复制没有真实使用场景；重置会清掉本地最好成绩，误触代价大于收益。
+ * 因此 package.json 里的 clipboard 权限声明也一并撤掉了（只声明真正用到的能力）。
  */
-
-async function copyRecord() {
-  const lines = ['三角洲行动 · 电脑保险解锁训练'];
-  for (const id of CHALLENGE_ORDER) {
-    const config = CHALLENGES[id];
-    if (!config.leaderboardKey) {
-      continue;
-    }
-    const best = state.best[id];
-    const plays = state.plays[id] ?? 0;
-    lines.push(
-      `${config.label}：${
-        best ? `破译 ${best.solved}/${config.rounds} · 总用时 ${formatSeconds(best.totalMs)}` : '暂无成绩'
-      }${plays > 0 ? ` · 完成 ${plays} 次` : ''}`,
-    );
-  }
-
-  // 练习只存在于本次会话，有内容才带上。
-  if (state.practice.rounds > 0) {
-    const { decoded, totalMs, bestMs } = state.practice;
-    lines.push(
-      `练习（本次会话）：已破译 ${decoded} 台 · 累计 ${formatSeconds(totalMs)}${
-        bestMs > 0 ? ` · 最快单次 ${formatSeconds(bestMs)}` : ''
-      }`,
-    );
-  }
-
-  const text = lines.join('\n');
-
-  try {
-    await hbSDK.device.setClipboard({ text });
-    await notify('成绩已复制', 'success');
-    return;
-  } catch (error) {
-    if (!(error instanceof HbMiniProgramSDKError)) {
-      console.warn('[delta-unlock] setClipboard 失败', error);
-    }
-  }
-
-  try {
-    await navigator.clipboard.writeText(text);
-    await notify('成绩已复制', 'success');
-  } catch {
-    setFootNote('当前环境不支持写剪贴板，成绩见上方统计');
-    await notify('复制失败', 'error');
-  }
-}
-
-async function resetRecord() {
-  if (!state.resetArmed) {
-    state.resetArmed = true;
-    dom.btnReset.textContent = '再点一次清空';
-    dom.btnReset.classList.add('is-danger');
-    window.clearTimeout(state.resetArmId);
-    state.resetArmId = window.setTimeout(() => {
-      state.resetArmed = false;
-      dom.btnReset.textContent = '重置记录';
-      dom.btnReset.classList.remove('is-danger');
-    }, 3000);
-    return;
-  }
-
-  window.clearTimeout(state.resetArmId);
-  state.resetArmed = false;
-  dom.btnReset.textContent = '重置记录';
-  dom.btnReset.classList.remove('is-danger');
-
-  state.best = {};
-  state.plays = {};
-  await saveRecord();
-  renderAll();
-  setFootNote('');
-  await notify('记录已重置', 'success');
-}
 
 function bindEvents() {
   dom.btnMain.addEventListener('click', onMainAction);
@@ -948,8 +874,6 @@ function bindEvents() {
   dom.btnBack.addEventListener('click', () => abortToIdle());
   dom.btnTable.addEventListener('click', toggleTable);
   dom.btnBoardRefresh.addEventListener('click', () => refreshBoard());
-  dom.btnCopy.addEventListener('click', copyRecord);
-  dom.btnReset.addEventListener('click', resetRecord);
 
   dom.keypad.addEventListener('click', (event) => {
     const key = event.target.closest('.key');

@@ -84,8 +84,8 @@ npm run deploy -- --release-note "更新说明"
 `package.json#heybox` 中声明了：
 
 - `name` / `icon` / `coverImages`：`assets/icon.png`（200×200）与 `assets/cover.png`（960×540）。
-- `permissions`：`storage`（本地记录）、`clipboard`（复制成绩）、`leaderboard`（云端排行榜）。
-  三者都只需声明，不需要平台批准。
+- `permissions`：`storage`（本地记录）、`leaderboard`（云端排行榜）。
+  两者都只需声明，不需要平台批准。只声明真正用到的能力。
 - `window`：PC 开窗默认 480×880，最小 360×620，允许用户拖拽缩放。
 - `platforms`：移动端与桌面端六个平台都写在里面，方便桌面调试入口出现。
   **发布前请按实际完成验收的平台裁剪这个数组**，未适配的平台应移除。
@@ -111,6 +111,5 @@ docs/                 运行截图
   回退到 `localStorage`，页脚会给出提示。
 - 排行榜不可用时（未登录、不在小黑盒客户端内、榜单未创建）只影响提交与榜单展示，
   挑战流程与本地记录照常工作，结算页会说明具体原因。
-- `clipboard` 不可用时「复制成绩」回退到浏览器剪贴板，再失败则只提示，不影响游戏。
 
 更多内容见 [CLI 指南](https://docs.xiaoheihe.cn/hb_sdk/guide/cli) 和 [SDK 文档](https://docs.xiaoheihe.cn/hb_sdk/)。
