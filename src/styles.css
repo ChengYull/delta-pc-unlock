@@ -25,6 +25,13 @@
 
   --mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Courier New', monospace;
 
+  /* 摩斯字形：每个符号（点或杠）占用同样宽度的格子 --morse-cell，格子之间留 --morse-gap。
+     符号在格子里居中绘制，所以一行摩斯的宽度只由符号个数决定，不会因为点数多就变短。 */
+  --morse-cell: 20px;
+  --morse-gap: 9px;
+  --morse-mark: 4px;
+  --morse-dash-length: 14px;
+
   color-scheme: light;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
   color: var(--ink);
@@ -287,26 +294,18 @@ body {
   background: rgba(108, 255, 176, 0.08);
 }
 
-.screen[data-phase='success'] .screen__status {
+/* 单轮结果的成功 / 失败配色挂在 data-outcome 上：
+   阶段名（roundResult / practiceResult）表达的是流程位置，表达不了这一轮对错。 */
+.screen[data-outcome='ok'] .screen__status {
   border-color: rgba(61, 220, 132, 0.5);
   color: #7dffbe;
   background: rgba(61, 220, 132, 0.16);
 }
 
-.screen[data-phase='failed'] .screen__status {
+.screen[data-outcome='bad'] .screen__status {
   border-color: rgba(255, 95, 86, 0.5);
   color: #ff9a92;
   background: rgba(255, 95, 86, 0.16);
-}
-
-.screen[data-phase='receiving'] .screen__status {
-  animation: blink 1s steps(2, start) infinite;
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0.45;
-  }
 }
 
 .meter {
@@ -358,8 +357,11 @@ body {
 
 .signal__morse {
   display: flex;
+  /* 符号间距必须在这里给：摩斯符号是直接挂在这个容器下的，
+     容器没有 gap 时点与杠会紧挨在一起。 */
+  gap: var(--morse-gap);
   align-items: center;
-  min-height: 7px;
+  min-height: var(--morse-mark);
   color: var(--scr-ink);
   filter: drop-shadow(0 0 2px rgba(108, 255, 176, 0.28));
 }
@@ -372,26 +374,40 @@ body {
 
 .morse {
   display: inline-flex;
-  gap: 8px;
+  gap: var(--morse-gap);
   align-items: center;
 }
 
-/* 点与杠刻意做得很细：参考游戏里纤细的摩斯线条，长:高 = 4:1。 */
+/* 点与杠占同一格宽度，符号本身居中画在格子里：
+   点的直径 = 杠的厚度 = --morse-mark，杠长度由 --morse-dash-length 控制。 */
 .morse__dot,
 .morse__dash {
+  position: relative;
   display: block;
-  height: 4px;
-  background: currentColor;
+  flex: 0 0 auto;
+  width: var(--morse-cell);
+  height: var(--morse-mark);
 }
 
-.morse__dot {
-  width: 4px;
+.morse__dot::before,
+.morse__dash::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 50%;
+  height: var(--morse-mark);
+  background: currentColor;
+  transform: translateX(-50%);
+}
+
+.morse__dot::before {
+  width: var(--morse-mark);
   border-radius: 50%;
 }
 
-.morse__dash {
-  width: 16px;
-  border-radius: 2px;
+.morse__dash::before {
+  width: var(--morse-dash-length);
+  border-radius: calc(var(--morse-mark) / 2);
 }
 
 .signal__listen {
@@ -446,11 +462,11 @@ body {
   line-height: 1.5;
 }
 
-.screen[data-phase='success'] .screen__foot {
+.screen[data-outcome='ok'] .screen__foot {
   color: #7dffbe;
 }
 
-.screen[data-phase='failed'] .screen__foot {
+.screen[data-outcome='bad'] .screen__foot {
   color: #ff9a92;
 }
 
@@ -598,8 +614,7 @@ body {
 }
 
 .btn--primary {
-  grid-column: 1 / -1;
-  order: -1;
+  grid-column: span 2;
   border-color: transparent;
   color: #23180a;
   background: linear-gradient(180deg, var(--amber) 0%, var(--amber-deep) 100%);
@@ -660,6 +675,11 @@ body {
 }
 
 .table {
+  /* 对照表更紧凑，但同样保持「符号等宽占位」的规则。 */
+  --morse-cell: 15px;
+  --morse-gap: 6px;
+  --morse-mark: 3px;
+  --morse-dash-length: 11px;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 3px 14px;
@@ -690,24 +710,6 @@ body {
   font-size: 14px;
   font-weight: 700;
   text-align: right;
-}
-
-.table .morse {
-  gap: 5px;
-}
-
-.table .morse__dot,
-.table .morse__dash {
-  height: 3px;
-}
-
-.table .morse__dot {
-  width: 3px;
-}
-
-.table .morse__dash {
-  width: 12px;
-  border-radius: 1.5px;
 }
 
 /* -------------------------------------------------------------------- 页脚 */
@@ -802,16 +804,49 @@ body {
   line-height: 1.5;
 }
 
-.board {
-  display: grid;
-  gap: 8px;
+/* 常驻排行榜面板 */
+.panel__action {
+  align-self: center;
+  margin-left: auto;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  background: transparent;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease,
+    color 140ms ease;
 }
 
-.board__title {
-  margin: 0;
+.panel__action:active {
+  transform: scale(0.97);
+}
+
+.panel__action:hover {
+  border-color: var(--amber);
+  color: var(--ink);
+}
+
+.panel__action:focus-visible {
+  outline: 3px solid var(--amber);
+  outline-offset: 2px;
+}
+
+.panel__status {
+  margin: 0 0 9px;
   color: var(--ink-soft);
   font-size: 12px;
-  font-weight: 600;
+  line-height: 1.5;
+}
+
+/* 前 50 名很长，限高内滚，避免把页面撑得过长 */
+.board__list--scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .board__list {
@@ -903,12 +938,10 @@ body {
     padding: 8px;
   }
 
-  .morse__dash {
-    width: 14px;
-  }
-
-  .table .morse__dash {
-    width: 11px;
+  .table {
+    --morse-cell: 13px;
+    --morse-gap: 5px;
+    --morse-dash-length: 10px;
   }
 }
 

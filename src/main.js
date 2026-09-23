@@ -10,7 +10,7 @@ import {
   makeResult,
 } from './challenge.js';
 import { formatRank, loadBoard, loadMyEntry, submitResult } from './leaderboard.js';
-import { MORSE_BY_DIGIT, createMorsePlayer, playMorseSequence, randomCode } from './morse.js';
+import { MORSE_BY_DIGIT, createMorsePlayer, randomCode } from './morse.js';
 
 /** 密码破译线索表的展示顺序，与游戏一致：1-9 再 0。 */
 const TABLE_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -20,11 +20,12 @@ const VERIFY_DELAY_MS = 160;
 /** 单轮结果停留时长：答对短、答错长（要看清正确答案）。 */
 const WON_HOLD_MS = 620;
 const LOST_HOLD_MS = 1400;
-/** 练习模式单次结果停留时长。 */
-const PRACTICE_HOLD_MS = 900;
 
 /** 本地记录 key。v2 起按模式存最好成绩，与 v1 的连续练习统计不兼容。 */
 const STORAGE_KEY = 'delta-unlock-record-v2';
+
+/** 常驻排行榜展示条数（getList 单页上限 100，50 一页够用）。 */
+const BOARD_LIMIT = 50;
 
 const dom = {
   chips: document.getElementById('chips'),
@@ -54,13 +55,15 @@ const dom = {
   resultAverage: document.getElementById('result-average'),
   resultAccuracy: document.getElementById('result-accuracy'),
   resultRank: document.getElementById('result-rank'),
-  boardWrap: document.getElementById('board-wrap'),
-  board: document.getElementById('board'),
+  boardPanel: document.getElementById('board-panel'),
+  boardTitle: document.getElementById('board-title'),
+  boardStatus: document.getElementById('board-status'),
+  boardList: document.getElementById('board-list'),
+  btnBoardRefresh: document.getElementById('btn-board-refresh'),
   btnMain: document.getElementById('btn-main'),
   btnAgain: document.getElementById('btn-again'),
   btnBack: document.getElementById('btn-back'),
   btnTable: document.getElementById('btn-table'),
-  btnSound: document.getElementById('btn-sound'),
   btnCopy: document.getElementById('btn-copy'),
   btnReset: document.getElementById('btn-reset'),
   footStats: document.getElementById('foot-stats'),
@@ -69,11 +72,9 @@ const dom = {
 
 const state = {
   mode: 'practice',
-  /** 音效默认关闭。 */
-  soundOn: false,
   /** 对照表常驻显示，保留手动收起。 */
   wantsTable: true,
-  /** idle | receiving | running | roundResult | summary */
+  /** idle | running | roundResult | practiceResult | summary */
   phase: 'idle',
   code: [],
   entry: [],
@@ -92,9 +93,16 @@ const state = {
   storageFallback: false,
   resetArmed: false,
   resetArmId: 0,
+  /**
+   * 练习模式的会话累计：只在内存里，不落 storage。
+   * 离开练习模式或关闭页面就归零，符合「练习不计成绩」的定位。
+   */
+  practice: { decoded: 0, totalMs: 0, bestMs: 0, rounds: 0 },
   /** 各挑战模式的最好成绩与完成次数。 */
   best: {},
   plays: {},
+  /** 榜单请求序号：切换难度后让在途的旧请求作废，避免旧榜单覆盖新榜单。 */
+  boardToken: 0,
 };
 
 const morsePlayer = createMorsePlayer();
@@ -104,13 +112,16 @@ const slotCells = [];
 /* ------------------------------------------------------------------ 工具 */
 
 const currentConfig = () => CHALLENGES[state.mode];
+/** 是否处于「一轮在进行或刚结束」的状态：终端展示的是一轮实况而不是待机。 */
 const inRunPhase = () =>
-  state.phase === 'running' || state.phase === 'receiving' || state.phase === 'roundResult';
+  state.phase === 'running' || state.phase === 'roundResult' || state.phase === 'practiceResult';
+
+/** 是否正在进行中的一轮（计时还在跑）。 */
+const isTiming = () => state.phase === 'running';
 
 /** 挑战进行中的累计总用时（含当前未结束的轮）。 */
 function liveTotalMs() {
-  const running = state.phase === 'running' || state.phase === 'receiving' ? state.roundElapsedMs : 0;
-  return state.totalMs + running;
+  return state.totalMs + (isTiming() ? state.roundElapsedMs : 0);
 }
 
 function morseElement(morse) {
@@ -278,7 +289,7 @@ function buildSignalRows() {
     listen.textContent = '试听';
     listen.setAttribute('aria-label', `试听第 ${index + 1} 行摩斯密码`);
     listen.addEventListener('click', () => {
-      if (!state.soundOn || state.code.length !== CODE_LENGTH) {
+      if (state.code.length !== CODE_LENGTH) {
         return;
       }
       morsePlayer.play(MORSE_BY_DIGIT[state.code[index]]);
@@ -333,7 +344,7 @@ function renderSignals() {
     const morse = state.code.length === CODE_LENGTH ? MORSE_BY_DIGIT[state.code[index]] : '-----';
     refs.morse.replaceChildren(...morseElement(morse).children);
     refs.morse.classList.toggle('is-idle', state.code.length !== CODE_LENGTH);
-    refs.listen.disabled = !state.soundOn || state.code.length !== CODE_LENGTH;
+    refs.listen.disabled = state.code.length !== CODE_LENGTH;
 
     const entered = state.entry[index];
     if (revealed) {
@@ -374,9 +385,18 @@ function renderHud() {
   const config = currentConfig();
 
   dom.hudProgress.textContent = inRunPhase() ? `${state.round}/${config.rounds}` : '—';
-  dom.hudSolved.textContent = String(state.solved);
-  dom.hudTotal.textContent = formatSeconds(liveTotalMs());
-  dom.hudBest.textContent = formatResult(state.best[state.mode]);
+
+  if (config.leaderboardKey) {
+    dom.hudSolved.textContent = String(state.solved);
+    dom.hudTotal.textContent = formatSeconds(liveTotalMs());
+    dom.hudBest.textContent = formatResult(state.best[state.mode]);
+  } else {
+    // 练习：显示本次会话的累计，退出练习或关闭页面即清空。
+    const { decoded, totalMs, bestMs } = state.practice;
+    dom.hudSolved.textContent = String(decoded);
+    dom.hudTotal.textContent = formatSeconds(totalMs);
+    dom.hudBest.textContent = bestMs > 0 ? formatSeconds(bestMs) : '—';
+  }
 
   const lines = CHALLENGE_ORDER.filter((id) => CHALLENGES[id].leaderboardKey && state.best[id]).map(
     (id) => `${CHALLENGES[id].chip} ${formatResult(state.best[id])}`,
@@ -442,8 +462,6 @@ function renderAll() {
   renderTableVisibility();
   renderVisibility();
 
-  dom.btnSound.setAttribute('aria-pressed', String(state.soundOn));
-  dom.btnSound.classList.toggle('is-active', state.soundOn);
   dom.screen.dataset.phase = state.phase;
 }
 
@@ -500,6 +518,7 @@ function resetRun() {
   state.reveal = null;
   clearTableHits();
   dom.screen.classList.remove('is-urgent');
+  dom.screen.dataset.outcome = '';
 }
 
 function idleButtonLabel() {
@@ -516,39 +535,22 @@ function abortToIdle({ status = '待机', foot } = {}) {
   renderAll();
 }
 
-async function startRun() {
+function startRun() {
   resetRun();
   renderAll();
-  await startRound();
+  startRound();
 }
 
-async function startRound() {
+/** 开一轮：直接进入破译并开始计时（音效按钮暂时下线，不再有等待播报的阶段）。 */
+function startRound() {
   const config = currentConfig();
   state.entry = [];
   state.reveal = null;
   state.roundElapsedMs = 0;
-
-  const withAudio = state.soundOn;
-  state.phase = withAudio ? 'receiving' : 'running';
   state.code = randomCode(CODE_LENGTH);
-  renderAll();
-
-  if (withAudio) {
-    setStatus('信号接收中');
-    setFoot(`第 ${state.round}/${config.rounds} 轮 · 正在接收摩斯信号…`);
-    setKeypadEnabled(false);
-    setMainButton('破译中', true);
-    try {
-      await playMorseSequence(morsePlayer, state.code.map((digit) => MORSE_BY_DIGIT[digit]));
-    } catch (error) {
-      console.warn('[delta-unlock] 摩斯播报失败', error);
-    }
-    if (state.phase !== 'receiving') {
-      return;
-    }
-  }
-
   state.phase = 'running';
+  dom.screen.dataset.outcome = '';
+
   setStatus('破译中');
   setFoot(`第 ${state.round}/${config.rounds} 轮 · 对照线索输入 3 位密码`);
   setKeypadEnabled(true);
@@ -562,11 +564,41 @@ function judge() {
   endRound(ok, ok ? '' : '密码错误');
 }
 
+/** 累计一次练习结果。只记在内存里，不落 storage。 */
+function recordPracticeRound(ok, roundMs) {
+  state.practice.rounds += 1;
+  state.practice.totalMs += roundMs;
+  if (!ok) {
+    return;
+  }
+  state.practice.decoded += 1;
+  if (state.practice.bestMs === 0 || roundMs < state.practice.bestMs) {
+    state.practice.bestMs = roundMs;
+  }
+}
+
+/** 练习结果文案：本次成绩 + 会话累计。 */
+function practiceFoot(ok, roundMs) {
+  const { decoded, bestMs } = state.practice;
+  const parts = [];
+  if (!ok) {
+    parts.push(`正确密码 ${state.code.join('')}`);
+  }
+  parts.push(`本次 ${formatSeconds(roundMs)}`);
+  parts.push(`本次会话已破译 ${decoded} 台`);
+  if (bestMs > 0) {
+    parts.push(`最快单次 ${formatSeconds(bestMs)}`);
+  }
+  parts.push('点「再来一次」继续');
+  return parts.join(' · ');
+}
+
 function endRound(ok, reason) {
   if (state.phase !== 'running') {
     return;
   }
   const config = currentConfig();
+  const isPractice = !config.leaderboardKey;
   stopRoundTimer();
 
   const roundMs = state.roundElapsedMs;
@@ -576,11 +608,11 @@ function endRound(ok, reason) {
     state.solved += 1;
   }
 
-  state.phase = 'roundResult';
+  state.phase = isPractice ? 'practiceResult' : 'roundResult';
   state.reveal = { ok, code: state.code.slice() };
   state.entry = state.code.slice();
+  dom.screen.dataset.outcome = ok ? 'ok' : 'bad';
   setKeypadEnabled(false);
-  setMainButton('继续中…', true);
 
   if (ok) {
     setStatus('解锁成功');
@@ -598,26 +630,25 @@ function endRound(ok, reason) {
     vibrate('heavy');
   }
   markTableHits();
-  renderAll();
 
-  const holdMs = ok ? WON_HOLD_MS : LOST_HOLD_MS;
-
-  // 练习：单次破译，结束即回待机，不计成绩。
-  if (!config.leaderboardKey) {
-    state.advanceId = window.setTimeout(() => {
-      abortToIdle({
-        status: ok ? '练习完成' : '练习结束',
-        foot: ok ? '单次破译完成 · 练习不计成绩' : '练习不计成绩，可再试一次',
-      });
-    }, PRACTICE_HOLD_MS);
+  // 练习：停在结果页，等用户点「再来一次」。不清空、不自动跳转，方便他回看这一把。
+  if (isPractice) {
+    recordPracticeRound(ok, roundMs);
+    setMainButton('再来一次', false);
+    setStatus(ok ? '练习完成' : '练习结束');
+    setFoot(practiceFoot(ok, roundMs));
+    renderAll();
     return;
   }
 
+  setMainButton('继续中…', true);
+  renderAll();
+
+  const holdMs = ok ? WON_HOLD_MS : LOST_HOLD_MS;
   if (state.round >= config.rounds) {
     state.advanceId = window.setTimeout(finishRun, holdMs);
     return;
   }
-
   state.advanceId = window.setTimeout(() => {
     state.round += 1;
     startRound();
@@ -637,11 +668,12 @@ function recordRun(config, result) {
   saveRecord();
 }
 
-function renderBoard(entries, myAppUserId) {
-  dom.board.replaceChildren(
+/** 把榜单条目渲染进指定列表；`myAppUserId` 命中时高亮为「我」。 */
+function renderBoardList(listEl, entries, myAppUserId) {
+  listEl.replaceChildren(
     ...entries.map((entry) => {
-      const row = document.createElement('li');
       const isMe = Boolean(myAppUserId && entry.appUserId === myAppUserId);
+      const row = document.createElement('li');
       row.className = 'board__row';
       row.classList.toggle('is-me', isMe);
 
@@ -661,26 +693,69 @@ function renderBoard(entries, myAppUserId) {
       return row;
     }),
   );
-  dom.boardWrap.hidden = entries.length === 0;
 }
 
-async function submitAndLoadBoard(config, result) {
+/**
+ * 刷新常驻排行榜。练习模式没有榜单，直接把面板收起来。
+ * @param {{ silent?: boolean }} options silent 为 true 时不显示「正在读取」占位。
+ */
+async function refreshBoard({ silent = false } = {}) {
+  const config = currentConfig();
+  // 每次请求都推进 token：切换难度后，在途的旧请求不会覆盖新榜单。
+  state.boardToken += 1;
+  const token = state.boardToken;
+
+  if (!config.leaderboardKey) {
+    dom.boardPanel.hidden = true;
+    return;
+  }
+
+  dom.boardPanel.hidden = false;
+  dom.boardTitle.textContent = `${config.label}排行榜 · 前 ${BOARD_LIMIT}`;
+  if (!silent) {
+    dom.boardStatus.textContent = '正在读取榜单…';
+  }
+
+  const board = await loadBoard(config.leaderboardKey, BOARD_LIMIT);
+  if (token !== state.boardToken) {
+    return;
+  }
+
+  if (!board.ok) {
+    dom.boardList.replaceChildren();
+    dom.boardStatus.textContent = `榜单暂不可用：${board.message}`;
+    return;
+  }
+  if (board.entries.length === 0) {
+    dom.boardList.replaceChildren();
+    dom.boardStatus.textContent = '还没有人上榜，完成一次挑战就能占榜首';
+    return;
+  }
+
+  const mine = await loadMyEntry(config.leaderboardKey);
+  if (token !== state.boardToken) {
+    return;
+  }
+
+  if (mine.ok && mine.entry) {
+    dom.boardStatus.textContent = `我的最好成绩：破译 ${mine.entry.result.solved} · 总用时 ${formatSeconds(
+      mine.entry.result.totalMs,
+    )} · ${formatRank(mine.entry)}`;
+  } else {
+    dom.boardStatus.textContent = '完成一次挑战即可上榜';
+  }
+
+  renderBoardList(dom.boardList, board.entries, mine.ok ? mine.entry?.appUserId : undefined);
+}
+
+async function submitRun(config, result) {
   const submitted = await submitResult(config.leaderboardKey, result);
   dom.resultRank.textContent = submitted.ok
     ? `已提交 · ${formatRank(submitted.entry)}`
     : `成绩未提交：${submitted.message}`;
 
-  const board = await loadBoard(config.leaderboardKey, 10);
-  if (!board.ok) {
-    console.warn('[delta-unlock] 排行榜读取失败', board.message);
-    return;
-  }
-  if (board.entries.length === 0) {
-    return;
-  }
-
-  const mine = await loadMyEntry(config.leaderboardKey);
-  renderBoard(board.entries, mine.ok ? mine.entry?.appUserId : undefined);
+  // 提交会在当前 runtime 内刷新榜单缓存，紧接着重读能拿到最新名次。
+  await refreshBoard({ silent: true });
 }
 
 function finishRun() {
@@ -700,13 +775,12 @@ function finishRun() {
   dom.resultAverage.textContent = formatSeconds(result.totalMs / rounds);
   dom.resultAccuracy.textContent = `${Math.round((result.solved / rounds) * 100)}%`;
   dom.resultRank.textContent = '正在提交成绩…';
-  dom.boardWrap.hidden = true;
 
   setStatus('挑战完成');
   setFoot(`${rounds} 轮中破译 ${result.solved} 台`);
   renderAll();
 
-  submitAndLoadBoard(config, result);
+  submitRun(config, result);
 }
 
 /* ------------------------------------------------------------------ 交互 */
@@ -742,11 +816,11 @@ function press(key) {
 }
 
 function onMainAction() {
-  if (state.phase === 'running' || state.phase === 'receiving') {
+  if (state.phase === 'running') {
     const config = currentConfig();
     abortToIdle({
       status: '已放弃',
-      foot: config.leaderboardKey ? '本次挑战已放弃，未提交成绩' : '练习已结束，可再试一次',
+      foot: config.leaderboardKey ? '本次挑战已放弃，未提交成绩' : '已放弃本次练习，可重新开始',
     });
     notify('已放弃');
     return;
@@ -759,7 +833,14 @@ function selectMode(mode) {
     return;
   }
   const wasRunning = state.phase !== 'idle' && state.phase !== 'summary';
+  const leavingPractice = state.mode === 'practice' && mode !== 'practice';
+
   resetRun();
+  // 练习的会话累计随离开练习模式一起清空。
+  if (leavingPractice) {
+    state.practice = { decoded: 0, totalMs: 0, bestMs: 0, rounds: 0 };
+  }
+
   state.mode = mode;
   state.phase = 'idle';
   setStatus('待机');
@@ -771,6 +852,8 @@ function selectMode(mode) {
   setKeypadEnabled(false);
   setMainButton(idleButtonLabel(), false);
   renderAll();
+  // 换难度就换榜单（练习没有榜单，面板会被收起）。
+  refreshBoard();
 }
 
 function toggleTable() {
@@ -778,18 +861,12 @@ function toggleTable() {
   renderTableVisibility();
 }
 
-function toggleSound() {
-  state.soundOn = !state.soundOn;
-  if (!state.soundOn) {
-    morsePlayer.stop();
-  }
-  setFootNote(
-    state.soundOn
-      ? '音效已开启：每轮开始前会播报摩斯，播报结束才开始计时'
-      : '音效已关闭：不再播报，计时立即开始',
-  );
-  renderAll();
-}
+/*
+ * 音效开关暂时下线：开启后需要在播报期间禁用键盘，而玩家可以直接盯着屏幕把密码记下来，
+ * 等于绕过了听力考核。后续会做成「仅音效」的独立排行榜模式（隐藏摩斯图案，键盘全程可用），
+ * 在那之前不暴露音效按钮。morse.js 里的播放器与 playMorseSequence 保留给那个模式复用，
+ * 单行的「试听」按钮不受影响。
+ */
 
 async function copyRecord() {
   const lines = ['三角洲行动 · 电脑保险解锁训练'];
@@ -806,6 +883,17 @@ async function copyRecord() {
       }${plays > 0 ? ` · 完成 ${plays} 次` : ''}`,
     );
   }
+
+  // 练习只存在于本次会话，有内容才带上。
+  if (state.practice.rounds > 0) {
+    const { decoded, totalMs, bestMs } = state.practice;
+    lines.push(
+      `练习（本次会话）：已破译 ${decoded} 台 · 累计 ${formatSeconds(totalMs)}${
+        bestMs > 0 ? ` · 最快单次 ${formatSeconds(bestMs)}` : ''
+      }`,
+    );
+  }
+
   const text = lines.join('\n');
 
   try {
@@ -859,7 +947,7 @@ function bindEvents() {
   dom.btnAgain.addEventListener('click', startRun);
   dom.btnBack.addEventListener('click', () => abortToIdle());
   dom.btnTable.addEventListener('click', toggleTable);
-  dom.btnSound.addEventListener('click', toggleSound);
+  dom.btnBoardRefresh.addEventListener('click', () => refreshBoard());
   dom.btnCopy.addEventListener('click', copyRecord);
   dom.btnReset.addEventListener('click', resetRecord);
 
@@ -923,6 +1011,7 @@ async function init() {
 
   await loadRecord();
   renderAll();
+  refreshBoard();
 }
 
 init();

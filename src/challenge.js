@@ -29,7 +29,7 @@ export const CHALLENGES = {
     rounds: 1,
     limitMs: 0,
     leaderboardKey: null,
-    description: '单次破译 · 不计成绩、不写榜单',
+    description: '单次破译 · 不计成绩 · 仅本次会话累计，离开练习即清空',
   },
   novice: {
     id: 'novice',

@@ -96,10 +96,6 @@
           </div>
         </div>
         <p class="result__rank" id="result-rank" role="status" aria-live="polite">—</p>
-        <div class="board" id="board-wrap" hidden>
-          <h3 class="board__title">排行榜 · 前 10</h3>
-          <ol class="board__list" id="board"></ol>
-        </div>
         <div class="result__actions">
           <button type="button" class="btn btn--primary" id="btn-again">再来一次</button>
           <button type="button" class="btn" id="btn-back">返回待机</button>
@@ -109,7 +105,6 @@
       <section class="actions" aria-label="操作">
         <button type="button" class="btn btn--primary" id="btn-main">开始挑战</button>
         <button type="button" class="btn is-active" id="btn-table" aria-pressed="true">对照表</button>
-        <button type="button" class="btn" id="btn-sound" aria-pressed="false">音效</button>
       </section>
 
       <section class="panel" id="table-panel">
@@ -118,6 +113,15 @@
           <span class="panel__note">点在前数点，杠在前用杠数加 5，5 个杠是 0</span>
         </h2>
         <ul class="table" id="table"></ul>
+      </section>
+
+      <section class="panel" id="board-panel" hidden>
+        <h2 class="panel__title">
+          <span id="board-title">排行榜</span>
+          <button type="button" class="panel__action" id="btn-board-refresh">刷新</button>
+        </h2>
+        <p class="panel__status" id="board-status" role="status" aria-live="polite">正在读取榜单…</p>
+        <ol class="board__list board__list--scroll" id="board-list"></ol>
       </section>
 
       <footer class="foot">
