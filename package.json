@@ -1,0 +1,55 @@
+{
+  "name": "delta-pc-unlock",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "heybox": {
+    "miniProgramId": "01a0c9f5-0bb7-709d-bf49-776164180e6e",
+    "name": "三角洲电脑保险解锁模拟器",
+    "icon": "assets/icon.png",
+    "coverImages": [
+      "assets/cover.png"
+    ],
+    "platforms": [
+      "android",
+      "ios",
+      "ohos",
+      "windows",
+      "macos",
+      "linux"
+    ],
+    "permissions": {
+      "storage": {
+        "enabled": true
+      },
+      "clipboard": {
+        "enabled": true
+      },
+      "leaderboard": {
+        "enabled": true
+      }
+    },
+    "window": {
+      "defaultWidth": 480,
+      "defaultHeight": 880,
+      "minWidth": 360,
+      "minHeight": 620,
+      "resizable": true
+    }
+  },
+  "scripts": {
+    "hb-sdk": "hb-sdk",
+    "dev": "hb-sdk dev",
+    "build": "hb-sdk build",
+    "deploy": "hb-sdk remote deploy"
+  },
+  "engines": {
+    "node": ">=22.20.0"
+  },
+  "dependencies": {
+    "@heybox/hb-sdk": "^0.8.2"
+  },
+  "devDependencies": {
+    "vite": "^8.0.12"
+  }
+}

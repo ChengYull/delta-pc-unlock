@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>三角洲电脑保险解锁模拟器</title>
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand__mark" aria-hidden="true"><i></i><i></i><i></i></span>
+          <div class="brand__text">
+            <h1 class="brand__title">电脑保险解锁模拟器</h1>
+            <p class="brand__sub">摩斯密码破译 · 3 位密码</p>
+          </div>
+        </div>
+        <div class="chips" id="chips" role="group" aria-label="难度"></div>
+      </header>
+
+      <section class="hud" aria-label="挑战数据">
+        <div class="hud__cell">
+          <span class="hud__key">进度</span>
+          <span class="hud__val" id="hud-progress">—</span>
+        </div>
+        <div class="hud__cell">
+          <span class="hud__key">已破译</span>
+          <span class="hud__val" id="hud-solved">0</span>
+        </div>
+        <div class="hud__cell">
+          <span class="hud__key">总用时</span>
+          <span class="hud__val" id="hud-total">0.00s</span>
+        </div>
+        <div class="hud__cell">
+          <span class="hud__key">最好</span>
+          <span class="hud__val" id="hud-best">—</span>
+        </div>
+      </section>
+
+      <section class="screen" id="screen" data-phase="idle">
+        <div class="screen__glow" aria-hidden="true"></div>
+        <div class="screen__head">
+          <span class="screen__tag">SAFE-04 · MORSE DECODER</span>
+          <span class="screen__meta">
+            <span class="screen__clock" id="screen-clock" hidden>—</span>
+            <span class="screen__status" id="screen-status">待机</span>
+          </span>
+        </div>
+        <div class="meter" id="meter" hidden>
+          <span class="meter__fill" id="meter-fill"></span>
+        </div>
+        <ul class="signals" id="signals"></ul>
+        <p class="screen__foot" id="screen-foot">选择难度后点「开始挑战」</p>
+      </section>
+
+      <section class="entry" aria-label="密码输入">
+        <div class="digits">
+          <span class="digits__label" id="digits-label">PASSCODE</span>
+          <div class="slots" id="slots"></div>
+        </div>
+        <div class="keypad" id="keypad">
+          <button type="button" class="key" data-key="1">1</button>
+          <button type="button" class="key" data-key="2">2</button>
+          <button type="button" class="key" data-key="3">3</button>
+          <button type="button" class="key" data-key="4">4</button>
+          <button type="button" class="key" data-key="5">5</button>
+          <button type="button" class="key" data-key="6">6</button>
+          <button type="button" class="key" data-key="7">7</button>
+          <button type="button" class="key" data-key="8">8</button>
+          <button type="button" class="key" data-key="9">9</button>
+          <button type="button" class="key key--fn" data-key="del" aria-label="删除一位">⌫</button>
+          <button type="button" class="key" data-key="0">0</button>
+          <button type="button" class="key key--fn" data-key="clear">清空</button>
+        </div>
+      </section>
+
+      <section class="result" id="result" hidden>
+        <p class="result__eyebrow" id="result-eyebrow">挑战完成</p>
+        <h2 class="result__title" id="result-title">专家挑战</h2>
+        <div class="result__grid">
+          <div class="result__cell">
+            <span class="result__key">破译数</span>
+            <strong class="result__val" id="result-solved">—</strong>
+          </div>
+          <div class="result__cell">
+            <span class="result__key">总用时</span>
+            <strong class="result__val" id="result-total">—</strong>
+          </div>
+          <div class="result__cell">
+            <span class="result__key">平均单轮</span>
+            <strong class="result__val" id="result-average">—</strong>
+          </div>
+          <div class="result__cell">
+            <span class="result__key">命中率</span>
+            <strong class="result__val" id="result-accuracy">—</strong>
+          </div>
+        </div>
+        <p class="result__rank" id="result-rank" role="status" aria-live="polite">—</p>
+        <div class="board" id="board-wrap" hidden>
+          <h3 class="board__title">排行榜 · 前 10</h3>
+          <ol class="board__list" id="board"></ol>
+        </div>
+        <div class="result__actions">
+          <button type="button" class="btn btn--primary" id="btn-again">再来一次</button>
+          <button type="button" class="btn" id="btn-back">返回待机</button>
+        </div>
+      </section>
+
+      <section class="actions" aria-label="操作">
+        <button type="button" class="btn btn--primary" id="btn-main">开始挑战</button>
+        <button type="button" class="btn is-active" id="btn-table" aria-pressed="true">对照表</button>
+        <button type="button" class="btn" id="btn-sound" aria-pressed="false">音效</button>
+      </section>
+
+      <section class="panel" id="table-panel">
+        <h2 class="panel__title">
+          密码破译线索
+          <span class="panel__note">点在前数点，杠在前用杠数加 5，5 个杠是 0</span>
+        </h2>
+        <ul class="table" id="table"></ul>
+      </section>
+
+      <footer class="foot">
+        <p class="foot__stats" id="foot-stats">还没有挑战记录</p>
+        <div class="foot__row">
+          <button type="button" class="btn btn--ghost" id="btn-copy">复制成绩</button>
+          <button type="button" class="btn btn--ghost" id="btn-reset">重置记录</button>
+        </div>
+        <p class="foot__note" id="foot-note" role="status" aria-live="polite"></p>
+      </footer>
+    </main>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

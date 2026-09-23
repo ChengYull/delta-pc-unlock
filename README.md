@@ -1,0 +1,103 @@
+# 三角洲电脑保险解锁模拟器
+
+小黑盒工坊小程序。还原《三角洲行动》「电脑保险」的破译终端：屏幕上给出 3 行摩斯密码，
+每行对应密码的一位数字，对照摩斯数字表把 3 位密码敲进键盘，越快越好。
+
+![进行中](docs/preview.png)
+
+![结算页](docs/preview-result.png)
+
+## 玩法
+
+| 模式 | 轮数 | 单轮限时 | 计入成绩 | 排行榜 |
+| --- | --- | --- | --- | --- |
+| 练习 | 1 | 不限 | ❌ | — |
+| 新手挑战 | 5 | 不限 | ✅ | 新手排行榜 |
+| 熟练挑战 | 10 | 8 秒 | ✅ | 熟练排行榜 |
+| 专家挑战 | 15 | 5 秒 | ✅ | 专家排行榜 |
+
+- **练习**：单次破译，答完即回待机，不写本地记录也不写榜单。
+- **挑战**：连续 N 轮，每轮 3 位密码，输满自动判定；答对累计破译数，答错或超时不计破译数并
+  短暂揭晓正确答案，然后自动进入下一轮（挑战不中断）。全部轮次结束后出结算页并提交榜单。
+- 排行榜按 **破译数优先、总时间次之** 排序；总时间累计挑战内所有轮次，
+  含答错与超时的轮次，所以失误是有代价的。
+- 数字键盘输入，输满 3 位自动判定；实体键盘 `0-9` / `Backspace` / `Enter` 同样可用。
+- **音效默认关闭**。开启后「试听」可用，且每轮开始前会播报 3 行摩斯，播报结束才开始计时。
+- 对照表（密码破译线索）常驻显示，与游戏一致：图案在左、数字在右，顺序 1-9 再 0。
+
+摩斯数字规则：点在前数点（5 个点是 5），杠在前用杠数加 5（1 个杠是 6、4 个杠是 9），
+5 个杠是 0。
+
+## 排行榜
+
+榜单只有一个数值 `score` 参与排序，`extra` 不参与排序，所以两项被编码进一个数：
+
+```
+score = 破译数 × 1_000_000 + (1_000_000 − 总毫秒)      order = desc
+```
+
+破译数多者恒胜出，破译数相同时总时间短者胜；`extra` 里另存 `{ solved, totalMs }` 供展示，
+读不到时回退到解码 `score`。
+
+榜单需要先用 CLI 为当前小程序创建（已创建，新增环境时重跑即可）：
+
+```bash
+npm run hb-sdk -- remote cloud leaderboard create novice_challenge --order desc --rank-limit 500
+npm run hb-sdk -- remote cloud leaderboard create skilled_challenge --order desc --rank-limit 500
+npm run hb-sdk -- remote cloud leaderboard create expert_challenge --order desc --rank-limit 500
+```
+
+## 命令
+
+> **Node.js 需要 ≥ 22.20.0。** 这是 hb-sdk 的硬性要求：它依赖的 `undici@7` 使用了 Node 20+
+> 才有的全局 `File`，Vite 8 也要求 Node 20.19+ / 22.12+。在 Node 18 上 CLI 大部分命令能跑通
+> （登录、`remote create`/`bind`、`build`），但 `hb-sdk dev` 会直接报 `File is not defined`。
+> 用 `node -v` 确认版本。
+
+```bash
+npm install
+npm run hb-sdk -- login
+npm run hb-sdk -- remote create
+# 已有远端小程序时改用：npm run hb-sdk -- remote bind <mini-program-id>
+npm run dev
+npm run build
+npm run deploy -- --release-note "更新说明"
+```
+
+`hb-sdk` 没有全局安装，所有 CLI 调用都要走 `npm run hb-sdk -- <子命令>`。
+
+## 项目声明
+
+`package.json#heybox` 中声明了：
+
+- `name` / `icon` / `coverImages`：`assets/icon.png`（200×200）与 `assets/cover.png`（960×540）。
+- `permissions`：`storage`（本地记录）、`clipboard`（复制成绩）、`leaderboard`（云端排行榜）。
+  三者都只需声明，不需要平台批准。
+- `window`：PC 开窗默认 480×880，最小 360×620，允许用户拖拽缩放。
+- `platforms`：移动端与桌面端六个平台都写在里面，方便桌面调试入口出现。
+  **发布前请按实际完成验收的平台裁剪这个数组**，未适配的平台应移除。
+
+## 目录结构
+
+```
+index.html            页面结构（HUD / 终端屏幕 / 密码显示区 / 键盘 / 结算页 / 对照表）
+src/morse.js          摩斯数字表、编解码、Web Audio 播放器
+src/challenge.js      四种模式配置、榜单分数编解码、成绩比较
+src/leaderboard.js    cloud.leaderboard 封装与错误降级
+src/main.js           挑战流程、计时、本地记录、结算与提交
+src/styles.css        终端屏幕与页面样式
+assets/               小程序图标与封面
+docs/                 运行截图
+```
+
+## 已知边界
+
+- 音效依赖宿主 WebView 的 Web Audio。取不到 AudioContext 或调度异常时会静默降级为无声，
+  不会阻塞回合——音效只是观感增强。
+- 本地记录通过 `storage` 按小程序身份隔离持久化；宿主不支持该能力（例如纯浏览器预览）时
+  回退到 `localStorage`，页脚会给出提示。
+- 排行榜不可用时（未登录、不在小黑盒客户端内、榜单未创建）只影响提交与榜单展示，
+  挑战流程与本地记录照常工作，结算页会说明具体原因。
+- `clipboard` 不可用时「复制成绩」回退到浏览器剪贴板，再失败则只提示，不影响游戏。
+
+更多内容见 [CLI 指南](https://docs.xiaoheihe.cn/hb_sdk/guide/cli) 和 [SDK 文档](https://docs.xiaoheihe.cn/hb_sdk/)。
