@@ -841,8 +841,8 @@ body {
 
 .board__row {
   display: grid;
-  grid-template-columns: 40px 26px minmax(0, 1fr) auto;
-  gap: 9px;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
   padding: 7px 10px;
   border-radius: 8px;
@@ -861,33 +861,6 @@ body {
 }
 
 .board__row.is-me .board__rank {
-  color: var(--amber-deep);
-  font-weight: 700;
-}
-
-/* 头像格子恒定占位（26px），无论有没有图行高都不动 */
-.board__avatar {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  overflow: hidden;
-  background: rgba(127, 137, 147, 0.22);
-  color: var(--ink-soft);
-  font-size: 11px;
-  line-height: 1;
-}
-
-.board__avatar-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.board__row.is-me .board__avatar {
-  background: var(--amber-soft);
   color: var(--amber-deep);
   font-weight: 700;
 }

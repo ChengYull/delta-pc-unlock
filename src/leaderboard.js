@@ -12,13 +12,7 @@
  * 各人**自己**在提交成绩时写进 `extra`（见 `loadMyProfile`），页面再原样读出来展示。
  */
 import hbSDK, { HbMiniProgramSDKError } from '@heybox/hb-sdk';
-import {
-  encodeScore,
-  normalizeAvatar,
-  normalizeNickname,
-  readEntryProfile,
-  readEntryResult,
-} from './challenge.js';
+import { encodeScore, normalizeNickname, readEntryProfile, readEntryResult } from './challenge.js';
 
 /** 榜单里给当前用户高亮用的标记，展示层对比 appUserId 使用。 */
 const ERROR_TEXT = {
@@ -68,13 +62,13 @@ function describeProfileError(error) {
 let profilePromise = null;
 
 /**
- * 读取当前用户的昵称与头像。`user.getInfo()` 不弹授权框、不要求可信手势，
+ * 读取当前用户的昵称。`user.getInfo()` 不弹授权框、不要求可信手势，
  * 未登录时返回 `isHeyboxAppLoggedIn: false`（正常分支，不抛错）。
  *
- * 首次调用会命中宿主，之后走会话内缓存——同一个会话里昵称头像不会变，
+ * 首次调用会命中宿主，之后走会话内缓存——同一个会话里昵称不会变，
  * 重复提交成绩时不必再问一次宿主。
  *
- * @returns {Promise<{ ok: boolean, appUserId?: string, nickname: string, avatar: string, message?: string }>}
+ * @returns {Promise<{ ok: boolean, appUserId?: string, nickname: string, message?: string }>}
  */
 export function loadMyProfile() {
   profilePromise ??= readMyProfile().then((profile) => {
@@ -90,19 +84,17 @@ async function readMyProfile() {
   try {
     const result = await hbSDK.user.getInfo();
     if (!result?.isHeyboxAppLoggedIn) {
-      return { ok: false, nickname: '', avatar: '', message: '未登录小黑盒账号' };
+      return { ok: false, nickname: '', message: '未登录小黑盒账号' };
     }
     if (!result.userInfo) {
-      return { ok: false, nickname: '', avatar: '', message: '用户资料未披露' };
+      return { ok: false, nickname: '', message: '用户资料未披露' };
     }
-    return {
-      ok: true,
-      appUserId: result.userInfo.app_user_id,
-      nickname: normalizeNickname(result.userInfo.profile?.nickname),
-      avatar: normalizeAvatar(result.userInfo.profile?.avatar),
-    };
+    const nickname = normalizeNickname(result.userInfo.profile?.nickname);
+    return nickname
+      ? { ok: true, appUserId: result.userInfo.app_user_id, nickname }
+      : { ok: false, nickname: '', message: '昵称为空' };
   } catch (error) {
-    return { ok: false, nickname: '', avatar: '', message: describeProfileError(error) };
+    return { ok: false, nickname: '', message: describeProfileError(error) };
   }
 }
 
@@ -110,7 +102,7 @@ async function readMyProfile() {
  * 提交本次挑战成绩。同一个用户在同一个榜单里只有一条记录，
  * 服务端只在成绩更优时覆盖，所以返回的 `entry` 才是最终落库结果。
  *
- * 昵称与头像搭 `extra` 一起提交——榜单列表只能从这里读到它们。资料读取失败时
+ * 昵称搭 `extra` 一起提交——榜单列表只能从这里读到它。资料读取失败时
  * 只提交成绩，不让附加信息拖垮主流程。
  * @param {string} key
  * @param {{ solved: number, totalMs: number }} result
@@ -122,12 +114,7 @@ export async function submitResult(key, result) {
     const entry = await hbSDK.cloud.leaderboard.submit({
       key,
       score: encodeScore(result),
-      extra: {
-        solved: result.solved,
-        totalMs: result.totalMs,
-        nickname: profile.nickname,
-        avatar: profile.avatar,
-      },
+      extra: { solved: result.solved, totalMs: result.totalMs, nickname: profile.nickname },
     });
     return { ok: true, entry, result, profile };
   } catch (error) {

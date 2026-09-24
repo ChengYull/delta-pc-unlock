@@ -116,11 +116,10 @@ export function readEntryResult(entry) {
 }
 
 /**
- * 昵称与头像也走 `extra` 公开返回。服务端对 `extra` 有 2048 UTF-8 字节的上限，
+ * 昵称也走 `extra` 公开返回。服务端对 `extra` 有 2048 UTF-8 字节的上限，
  * 超了整次提交会被 `INVALID_PARAMS` 拒掉（成绩一起丢掉），所以上传前必须先自己夹长度。
  */
 export const MAX_NICKNAME_LENGTH = 20;
-export const MAX_AVATAR_LENGTH = 512;
 
 /**
  * 规范化昵称：控制字符和换行会破坏榜单单行排版，统一折叠成空格再裁长度。
@@ -137,33 +136,17 @@ export function normalizeNickname(value) {
 }
 
 /**
- * 规范化头像地址。只接受绝对 https 地址：相对路径在榜单里没有可解析的基准，
- * 平台 CSP 也只放行自己的资源域名，其余地址交给 `<img>` 的 onerror 兜底即可。
- * @param {unknown} value
- */
-export function normalizeAvatar(value) {
-  if (typeof value !== 'string') {
-    return '';
-  }
-  const url = value.trim();
-  return /^https:\/\//i.test(url) ? url.slice(0, MAX_AVATAR_LENGTH) : '';
-}
-
-/**
- * 从榜单记录的 `extra` 里读昵称与头像。早期记录（或资料读取失败时提交的记录）
- * 里没有这两项，返回空串交由展示层回退。
+ * 从榜单记录的 `extra` 里读昵称。旧记录（提交时还没带资料）里没有这一项，
+ * 返回空串交由展示层回退。
  * @param {{ extra?: unknown }} entry
- * @returns {{ nickname: string, avatar: string }}
+ * @returns {{ nickname: string }}
  */
 export function readEntryProfile(entry) {
   const extra = entry?.extra;
   if (!extra || typeof extra !== 'object') {
-    return { nickname: '', avatar: '' };
+    return { nickname: '' };
   }
-  return {
-    nickname: normalizeNickname(extra.nickname),
-    avatar: normalizeAvatar(extra.avatar),
-  };
+  return { nickname: normalizeNickname(extra.nickname) };
 }
 
 /**

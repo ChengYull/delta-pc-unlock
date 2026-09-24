@@ -9,7 +9,7 @@ import {
   isBetterResult,
   makeResult,
 } from './challenge.js';
-import { formatRank, loadBoard, loadMyEntry, submitResult } from './leaderboard.js';
+import { formatRank, loadBoard, loadMyEntry, loadMyProfile, submitResult } from './leaderboard.js';
 import { MORSE_BY_DIGIT, createMorsePlayer, randomCode } from './morse.js';
 
 /** 密码破译线索表的展示顺序，与游戏一致：1-9 再 0。 */
@@ -665,49 +665,25 @@ function recordRun(config, result) {
 }
 
 /**
- * 头像格子。始终占位，读不到头像时退回首字母方块，行高不会因为有没有图而跳动。
+ * 一行榜单要显示的昵称。
  *
- * 头像地址来自小黑盒自己的 CDN（平台 CSP 的 img-src 只放行自有资源域名），
- * 万一换了域名或加载失败，`error` 事件就地撤掉 `<img>`，不留破图。
- * @param {{ nickname: string, avatar: string }} profile
+ * 榜单记录里的昵称由各人提交成绩时自己写进 `extra`，而 `extra` 只在**成绩更优**时更新，
+ * 所以旧记录里的昵称可能是空的。自己那行优先用实时资料，免得被那条冻结的旧记录卡住。
+ * @param {{ profile: { nickname: string }, appUserId?: string }} entry
  * @param {boolean} isMe
+ * @param {{ ok: boolean, nickname: string }|undefined} myProfile
  */
-function renderAvatar(profile, isMe) {
-  const wrap = document.createElement('span');
-  wrap.className = 'board__avatar';
-
-  const initial = (profile.nickname || (isMe ? '我' : '玩')).slice(0, 1);
-  const useFallback = () => {
-    wrap.textContent = initial;
-  };
-
-  if (!profile.avatar) {
-    useFallback();
-    return wrap;
+function resolveBoardName(entry, isMe, myProfile) {
+  if (isMe && myProfile?.nickname) {
+    return myProfile.nickname;
   }
-
-  const img = document.createElement('img');
-  img.className = 'board__avatar-img';
-  img.src = profile.avatar;
-  img.alt = '';
-  img.loading = 'lazy';
-  img.decoding = 'async';
-  img.referrerPolicy = 'no-referrer';
-  img.addEventListener(
-    'error',
-    () => {
-      img.remove();
-      useFallback();
-    },
-    { once: true },
+  return (
+    entry.profile.nickname || (isMe ? '我' : `玩家 ${String(entry.appUserId ?? '').slice(0, 6)}`)
   );
-
-  wrap.append(img);
-  return wrap;
 }
 
 /** 把榜单条目渲染进指定列表；`myAppUserId` 命中时高亮为「我」。 */
-function renderBoardList(listEl, entries, myAppUserId) {
+function renderBoardList(listEl, entries, myAppUserId, myProfile) {
   listEl.replaceChildren(
     ...entries.map((entry) => {
       const isMe = Boolean(myAppUserId && entry.appUserId === myAppUserId);
@@ -723,9 +699,7 @@ function renderBoardList(listEl, entries, myAppUserId) {
       who.className = 'board__who';
       const name = document.createElement('span');
       name.className = 'board__name';
-      // 昵称由上榜的人自己上传；老记录还没带资料，退回不可读的 appUserId 短码。
-      name.textContent =
-        entry.profile.nickname || (isMe ? '我' : `玩家 ${String(entry.appUserId ?? '').slice(0, 6)}`);
+      name.textContent = resolveBoardName(entry, isMe, myProfile);
       who.append(name);
       if (isMe) {
         const tag = document.createElement('span');
@@ -738,10 +712,23 @@ function renderBoardList(listEl, entries, myAppUserId) {
       score.className = 'board__score';
       score.textContent = `${entry.result.solved} · ${formatSeconds(entry.result.totalMs)}`;
 
-      row.append(rank, renderAvatar(entry.profile, isMe), who, score);
+      row.append(rank, who, score);
       return row;
     }),
   );
+}
+
+/**
+ * 昵称取不到时把原因显式写进状态行：榜上只剩一个「我」，
+ * 分不清是资料没读到、还是这条记录里本来就没存过昵称。
+ * @param {boolean} hasStoredNickname 这条记录自己在 `extra` 里有没有昵称
+ * @param {{ ok: boolean, message?: string }} profile
+ */
+function boardProfileNote(hasStoredNickname, profile) {
+  if (profile.ok || hasStoredNickname) {
+    return '';
+  }
+  return ` · 昵称未取到（${profile.message}）`;
 }
 
 /**
@@ -781,20 +768,30 @@ async function refreshBoard({ silent = false } = {}) {
     return;
   }
 
-  const mine = await loadMyEntry(config.leaderboardKey);
+  const [mine, myProfile] = await Promise.all([
+    loadMyEntry(config.leaderboardKey),
+    loadMyProfile(),
+  ]);
   if (token !== state.boardToken) {
     return;
   }
 
   if (mine.ok && mine.entry) {
-    dom.boardStatus.textContent = `我的最好成绩：破译 ${mine.entry.result.solved} · 总用时 ${formatSeconds(
-      mine.entry.result.totalMs,
-    )} · ${formatRank(mine.entry)}`;
+    dom.boardStatus.textContent =
+      `我的最好成绩：破译 ${mine.entry.result.solved} · 总用时 ${formatSeconds(
+        mine.entry.result.totalMs,
+      )} · ${formatRank(mine.entry)}` +
+      boardProfileNote(Boolean(mine.entry.profile.nickname), myProfile);
   } else {
     dom.boardStatus.textContent = '完成一次挑战即可上榜';
   }
 
-  renderBoardList(dom.boardList, board.entries, mine.ok ? mine.entry?.appUserId : undefined);
+  renderBoardList(
+    dom.boardList,
+    board.entries,
+    mine.ok ? mine.entry?.appUserId : undefined,
+    myProfile,
+  );
 }
 
 async function submitRun(config, result) {
