@@ -17,7 +17,10 @@ export const CODE_LENGTH = 3;
  * @property {number} rounds        一次挑战包含的破译轮数
  * @property {number} limitMs       单轮限时毫秒，0 表示不限时
  * @property {string|null} leaderboardKey 对应榜单 key，null 表示不计榜
- * @property {string} description   待机时展示的一句话说明
+ * @property {string} description   待机时展示的一句话说明。
+ *   显示在终端屏幕底部的 `.screen__foot`（11.5px 等宽，全宽字符按 1em 算），
+ *   要保证在最小窗口 360px 下**不折行**：可用宽度约 298px，也就是**最多 22 个全宽字符**
+ *   （`·` 两侧的空格按半宽计）。超了会挤成两行，屏幕高度跟着跳一下。
  */
 
 /** @type {Record<string, ChallengeConfig>} */
@@ -29,7 +32,7 @@ export const CHALLENGES = {
     rounds: 1,
     limitMs: 0,
     leaderboardKey: null,
-    description: '单次破译 · 不计成绩 · 仅本次会话累计，离开练习即清空',
+    description: '单次破译 · 不计成绩 · 仅本次会话累计',
   },
   novice: {
     id: 'novice',
