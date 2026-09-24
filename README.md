@@ -122,7 +122,11 @@ npm run deploy -- --release-note "更新说明"
 `package.json#heybox` 中声明了：
 
 - `name` / `icon` / `coverImages`：`assets/icon.png`（200×200）与 `assets/cover.png`（960×540）。
-- `permissions`：`userInfo`（读当前用户昵称头像）、`storage`（本地记录）、`leaderboard`（云端排行榜）。
+- `category`：`game`。**提审新版必须声明它**（`tool` / `game` / `other`），它会成为线上类别，
+  改一次就要重新构建 + 重新提审一次。注意这条**需要 SDK ≥ 0.8.3**：0.8.2 的发布模块不认该字段，
+  产物 `dist/manifest.json` 里不会出现 `category`，服务端准入会直接拒掉上传；
+  而 0.8.3 的 npm 标签是 `hb-sdk-family-candidate`（不是 `latest`），得显式指定版本号安装。
+- `permissions`：`userInfo`（读当前用户昵称）、`storage`（本地记录）、`leaderboard`（云端排行榜）。
   三者都只需声明，不需要平台批准。只声明真正用到的能力。
 - `window`：PC 开窗默认 480×880，最小 360×620，允许用户拖拽缩放。
 - `platforms`：移动端与桌面端六个平台都写在里面，方便桌面调试入口出现。
