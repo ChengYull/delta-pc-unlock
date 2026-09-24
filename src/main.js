@@ -664,6 +664,48 @@ function recordRun(config, result) {
   saveRecord();
 }
 
+/**
+ * 头像格子。始终占位，读不到头像时退回首字母方块，行高不会因为有没有图而跳动。
+ *
+ * 头像地址来自小黑盒自己的 CDN（平台 CSP 的 img-src 只放行自有资源域名），
+ * 万一换了域名或加载失败，`error` 事件就地撤掉 `<img>`，不留破图。
+ * @param {{ nickname: string, avatar: string }} profile
+ * @param {boolean} isMe
+ */
+function renderAvatar(profile, isMe) {
+  const wrap = document.createElement('span');
+  wrap.className = 'board__avatar';
+
+  const initial = (profile.nickname || (isMe ? '我' : '玩')).slice(0, 1);
+  const useFallback = () => {
+    wrap.textContent = initial;
+  };
+
+  if (!profile.avatar) {
+    useFallback();
+    return wrap;
+  }
+
+  const img = document.createElement('img');
+  img.className = 'board__avatar-img';
+  img.src = profile.avatar;
+  img.alt = '';
+  img.loading = 'lazy';
+  img.decoding = 'async';
+  img.referrerPolicy = 'no-referrer';
+  img.addEventListener(
+    'error',
+    () => {
+      img.remove();
+      useFallback();
+    },
+    { once: true },
+  );
+
+  wrap.append(img);
+  return wrap;
+}
+
 /** 把榜单条目渲染进指定列表；`myAppUserId` 命中时高亮为「我」。 */
 function renderBoardList(listEl, entries, myAppUserId) {
   listEl.replaceChildren(
@@ -679,13 +721,24 @@ function renderBoardList(listEl, entries, myAppUserId) {
 
       const who = document.createElement('span');
       who.className = 'board__who';
-      who.textContent = isMe ? '我' : `玩家 ${String(entry.appUserId ?? '').slice(0, 6)}`;
+      const name = document.createElement('span');
+      name.className = 'board__name';
+      // 昵称由上榜的人自己上传；老记录还没带资料，退回不可读的 appUserId 短码。
+      name.textContent =
+        entry.profile.nickname || (isMe ? '我' : `玩家 ${String(entry.appUserId ?? '').slice(0, 6)}`);
+      who.append(name);
+      if (isMe) {
+        const tag = document.createElement('span');
+        tag.className = 'board__tag';
+        tag.textContent = '我';
+        who.append(tag);
+      }
 
       const score = document.createElement('span');
       score.className = 'board__score';
       score.textContent = `${entry.result.solved} · ${formatSeconds(entry.result.totalMs)}`;
 
-      row.append(rank, who, score);
+      row.append(rank, renderAvatar(entry.profile, isMe), who, score);
       return row;
     }),
   );

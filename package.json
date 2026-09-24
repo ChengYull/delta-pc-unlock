@@ -19,6 +19,9 @@
       "linux"
     ],
     "permissions": {
+      "userInfo": {
+        "enabled": true
+      },
       "storage": {
         "enabled": true
       },
