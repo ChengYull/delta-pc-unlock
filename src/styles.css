@@ -127,32 +127,12 @@ body {
   align-items: center;
 }
 
+/* 三角洲行动的游戏标识。图是 128×128 的成品（深色圆角底 + 绿色 emblem），
+   圆角已经烘进 PNG 的 alpha，CSS 不用再切。 */
 .brand__mark {
-  display: grid;
-  gap: 3px;
+  flex: none;
   width: 34px;
-  padding: 7px 6px;
-  border-radius: 8px;
-  background: var(--amber);
-}
-
-.brand__mark i {
-  display: block;
-  height: 3px;
-  border-radius: 2px;
-  background: #23180a;
-}
-
-.brand__mark i:nth-child(1) {
-  width: 100%;
-}
-
-.brand__mark i:nth-child(2) {
-  width: 62%;
-}
-
-.brand__mark i:nth-child(3) {
-  width: 84%;
+  height: 34px;
 }
 
 .brand__text {
