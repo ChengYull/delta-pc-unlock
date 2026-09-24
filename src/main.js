@@ -11,6 +11,7 @@ import {
 } from './challenge.js';
 import { formatRank, loadBoard, loadMyEntry, loadMyProfile, submitResult } from './leaderboard.js';
 import { MORSE_BY_DIGIT, createMorsePlayer, randomCode } from './morse.js';
+import { syncViewportInsets } from './viewport.js';
 
 /** 密码破译线索表的展示顺序，与游戏一致：1-9 再 0。 */
 const TABLE_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -987,5 +988,8 @@ async function init() {
   renderAll();
   refreshBoard();
 }
+
+// 安全区要在首屏定版前落到 CSS 变量上，所以和 init() 里的 DOM 构建并行启动，不阻塞它。
+void syncViewportInsets(() => hbSDK.viewport.getWindowInfo());
 
 init();

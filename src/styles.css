@@ -25,6 +25,20 @@
 
   --mono: ui-monospace, SFMono-Regular, 'JetBrains Mono', Menlo, Consolas, 'Courier New', monospace;
 
+  /* 宿主注入的几何信息，由 src/viewport.js 在启动时写入。读不到时保留 0，
+     样式里的 env() 兜底仍然生效；真机 WebView 里 env() 本身就有值，
+     桌面调试台拿到 0，所以必须靠宿主实测值补齐。 */
+  --safe-top: 0px;
+  --safe-right: 0px;
+  --safe-bottom: 0px;
+  --safe-left: 0px;
+
+  /* 宿主悬浮按钮的占位。状态栏之下、右上角浮着一组「更多 / 分享」按钮，
+     平台没有公开它的尺寸，这里取调试台绘制同一组按钮时的实现：
+     相对状态栏底部再往下 6px、整体 87 × 32、右边距 7。 */
+  --host-actions-band: 38px; /* 6 + 32：状态栏之下需要让开的高度 */
+  --host-actions-width: 94px; /* 87 + 7：横向占位，含右边距 */
+
   /* 摩斯字形：每个符号（点或杠）占用同样宽度的格子 --morse-cell，格子之间留 --morse-gap。
      符号在格子里居中绘制，所以一行摩斯的宽度只由符号个数决定，不会因为点数多就变短。 */
   --morse-cell: 20px;
@@ -82,8 +96,12 @@ body {
   gap: 14px;
   width: min(100%, 520px);
   margin: 0 auto;
-  padding: max(18px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(24px, env(safe-area-inset-bottom))
-    max(16px, env(safe-area-inset-left));
+  /* 顶部只让开状态栏，右上角的悬浮按钮由 .brand 自己绕开（见下）。
+     env() 与宿主实测值取大者：真机上 env() 有值，调试台里只有宿主知道。 */
+  padding-top: calc(max(env(safe-area-inset-top, 0px), var(--safe-top)) + 16px);
+  padding-right: calc(max(env(safe-area-inset-right, 0px), var(--safe-right)) + 16px);
+  padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom)) + 24px);
+  padding-left: calc(max(env(safe-area-inset-left, 0px), var(--safe-left)) + 16px);
 }
 
 /* ------------------------------------------------------------------ 顶栏 */
@@ -97,6 +115,11 @@ body {
   display: flex;
   gap: 12px;
   align-items: center;
+  /* 宿主的「更多 / 分享」按钮浮在状态栏之下的右上角，和品牌行同一高度：
+     右侧留出它的宽度（文字超了省略号，不会钻到按钮底下），整行再撑到它的下沿，
+     这样紧跟其后的难度切换、HUD 怎么排都不会被压住。 */
+  min-height: var(--host-actions-band);
+  padding-right: var(--host-actions-width);
 }
 
 .brand__mark {
@@ -133,15 +156,21 @@ body {
 
 .brand__title {
   margin: 0;
+  overflow: hidden;
   font-size: 19px;
   line-height: 1.25;
   letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .brand__sub {
   margin: 3px 0 0;
+  overflow: hidden;
   color: var(--ink-soft);
   font-size: 12.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .chips {

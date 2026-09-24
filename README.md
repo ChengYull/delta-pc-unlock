@@ -121,6 +121,30 @@ npm run deploy -- --release-note "更新说明"
 - `platforms`：移动端与桌面端六个平台都写在里面，方便桌面调试入口出现。
   **发布前请按实际完成验收的平台裁剪这个数组**，未适配的平台应移除。
 
+## 布局与安全区
+
+宿主的小程序 WebView 是**沉浸式**的：页面从窗口第一行像素开始，状态栏、右上角的
+悬浮按钮、底部手势条都压在页面上。所以顶部避让不能只靠 CSS 的 `env(safe-area-inset-*)`
+——桌面调试台里它恒为 0 ——必须问宿主拿几何信息。
+
+`src/viewport.js` 启动时调 `viewport.getWindowInfo()`（免声明、免授权、免登录），把
+`statusBarHeight` 与 `safeArea`（四个字段是**边界坐标**，右侧和底部要自己做减法）
+换算成 `--safe-top` / `--safe-right` / `--safe-bottom` / `--safe-left` 写进 `:root`，
+`styles.css` 一律用 `max(env(...), var(--safe-*))` 取两者较大值。读不到时什么都不写，
+退回 `env()` 兜底。PC 窗口能被用户拖拽，所以尺寸变化时会防抖重读一次。
+
+右上角那组「更多 / 分享」按钮是宿主自己浮的，页面关不掉，只能让开：
+
+| 变量 | 值 | 用途 |
+| --- | --- | --- |
+| `--host-actions-band` | `38px` | 悬浮按钮相对状态栏底部占的高度（`6 + 32`） |
+| `--host-actions-width` | `94px` | 悬浮按钮横向占位，含右边距（`87 + 7`） |
+
+平台没有公开这组数字，取值来自调试台绘制同一组按钮时的实现。`.brand` 用
+`padding-right: var(--host-actions-width)` 把标题挡在按钮左边（超长走省略号），
+再用 `min-height: var(--host-actions-band)` 把整行撑到悬浮区下沿——这样紧随其后的
+难度切换、HUD 在什么设备上都不会被压住。两个变量只在品牌行上生效，不影响其余布局。
+
 ## 目录结构
 
 ```
@@ -128,6 +152,7 @@ index.html            页面结构（HUD / 终端屏幕 / 密码显示区 / 键�
 src/morse.js          摩斯数字表、编解码、Web Audio 播放器
 src/challenge.js      四种模式配置、榜单分数编解码、成绩比较
 src/leaderboard.js    cloud.leaderboard 封装与错误降级
+src/viewport.js       宿主安全区与悬浮按钮避让 → CSS 变量
 src/main.js           挑战流程、计时、本地记录、结算与提交
 src/styles.css        终端屏幕与页面样式
 assets/               小程序图标与封面
