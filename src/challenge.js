@@ -1,9 +1,9 @@
 /**
  * 挑战配置与计分。
  *
- * 四种模式分两类：
+ * 两种模式分两类：
  *   - 练习：单次破译，不计成绩，不写榜单。
- *   - 挑战：连续 N 轮破译，结算后按「破译数优先、总时间次之」写入对应榜单。
+ *   - 挑战：连续 15 轮破译，结算后按「破译数优先、总时间次之」写入榜单。
  */
 
 /** 每轮密码位数：三角洲行动的电脑保险固定 3 位。 */
@@ -34,37 +34,21 @@ export const CHALLENGES = {
     leaderboardKey: null,
     description: '单次破译 · 不计成绩 · 仅本次会话累计',
   },
-  novice: {
-    id: 'novice',
-    label: '新手挑战',
-    chip: '新手',
-    rounds: 5,
-    limitMs: 0,
-    leaderboardKey: 'novice_challenge',
-    description: '5 次破译 · 不限时 · 参与新手排行榜',
-  },
-  skilled: {
-    id: 'skilled',
-    label: '熟练挑战',
-    chip: '熟练',
-    rounds: 10,
-    limitMs: 8000,
-    leaderboardKey: 'skilled_challenge',
-    description: '10 次破译 · 每次限时 8 秒 · 参与熟练排行榜',
-  },
+  // id 与榜单 key 都保留 expert：本地记录按 id 存、云端榜单叫 expert_challenge，
+  // 都是已经落地的资源，改名会丢成绩，所以只改展示名。
   expert: {
     id: 'expert',
-    label: '专家挑战',
-    chip: '专家',
+    label: '挑战',
+    chip: '挑战',
     rounds: 15,
     limitMs: 5000,
     leaderboardKey: 'expert_challenge',
-    description: '15 次破译 · 每次限时 5 秒 · 参与专家排行榜',
+    description: '15 次破译 · 每次限时 5 秒 · 参与挑战排行榜',
   },
 };
 
 /** 难度按钮的展示顺序。 */
-export const CHALLENGE_ORDER = ['practice', 'novice', 'skilled', 'expert'];
+export const CHALLENGE_ORDER = ['practice', 'expert'];
 
 /**
  * 榜单只有一个数值 `score` 参与排序，`extra` 不参与排序，所以把两项编码进一个数：

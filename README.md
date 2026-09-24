@@ -12,14 +12,14 @@
 | 模式 | 轮数 | 单轮限时 | 计入成绩 | 排行榜 |
 | --- | --- | --- | --- | --- |
 | 练习 | 1 | 不限 | ❌ | — |
-| 新手挑战 | 5 | 不限 | ✅ | 新手排行榜 |
-| 熟练挑战 | 10 | 8 秒 | ✅ | 熟练排行榜 |
-| 专家挑战 | 15 | 5 秒 | ✅ | 专家排行榜 |
+| 挑战 | 15 | 5 秒 | ✅ | 挑战排行榜 |
+
+难度按钮在标题右边共处一行，只有练习与挑战两个。
 
 - **练习**：单次破译。结束后**停在结果页**，摩斯、正确答案与本次用时都留在屏幕上，
   由用户点「再来一次」继续，方便回看成绩。HUD 显示本次会话的累计（已破译台数、累计用时、
   最快单次），**只存在内存里，离开练习模式或关闭页面即清空**，不写 storage 也不写榜单。
-- **挑战**：连续 N 轮，每轮 3 位密码，输满自动判定；答对累计破译数，答错或超时不计破译数并
+- **挑战**：连续 15 轮，每轮 3 位密码，输满自动判定；答对累计破译数，答错或超时不计破译数并
   短暂揭晓正确答案，然后自动进入下一轮（挑战不中断）。全部轮次结束后出结算页并提交榜单。
 - 排行榜按 **破译数优先、总时间次之** 排序；总时间累计挑战内所有轮次，
   含答错与超时的轮次，所以失误是有代价的。
@@ -86,10 +86,13 @@ extra = { solved, totalMs, nickname }      // nickname ≤ 20 字
 榜单需要先用 CLI 为当前小程序创建（已创建，新增环境时重跑即可）：
 
 ```bash
-npm run hb-sdk -- remote cloud leaderboard create novice_challenge --order desc --rank-limit 500
-npm run hb-sdk -- remote cloud leaderboard create skilled_challenge --order desc --rank-limit 500
 npm run hb-sdk -- remote cloud leaderboard create expert_challenge --order desc --rank-limit 500
 ```
+
+> 模式从「新手 / 熟练 / 专家」三档收敛成「练习 / 挑战」后，**只用到 `expert_challenge`**。
+> 早先创建的 `novice_challenge`、`skilled_challenge` 仍留在服务端，页面已不再读写；
+> 要清理可以走 `remote cloud leaderboard delete`。本地记录侧不用管——`normalizeRecord()`
+> 只保留 `CHALLENGE_ORDER` 里还有的 id，被删掉的两档记录下次存盘时自动消失。
 
 ## 命令
 
@@ -133,24 +136,23 @@ npm run deploy -- --release-note "更新说明"
 `styles.css` 一律用 `max(env(...), var(--safe-*))` 取两者较大值。读不到时什么都不写，
 退回 `env()` 兜底。PC 窗口能被用户拖拽，所以尺寸变化时会防抖重读一次。
 
-右上角那组「更多 / 分享」按钮是宿主自己浮的，页面关不掉，只能让开：
+右上角那组「更多 / 分享」按钮是宿主自己浮的（`top = 状态栏 + 6`、`87 × 32`、右边距 `7`），
+页面关不掉，只能让开。顶栏（标题 + 难度）整条都排在它下方：
 
-| 变量 | 值 | 用途 |
-| --- | --- | --- |
-| `--host-actions-band` | `38px` | 悬浮按钮相对状态栏底部占的高度（`6 + 32`） |
-| `--host-actions-width` | `94px` | 悬浮按钮横向占位，含右边距（`87 + 7`） |
+```
+--host-actions-band: 38px     状态栏之下需要让开的高度（6 + 32）
+.app padding-top = max(env(safe-area-inset-top), statusBarHeight) + 38 + 16
+```
 
-平台没有公开这组数字，取值来自调试台绘制同一组按钮时的实现。`.brand` 用
-`padding-right: var(--host-actions-width)` 把标题挡在按钮左边（超长走省略号），
-再用 `min-height: var(--host-actions-band)` 把整行撑到悬浮区下沿——这样紧随其后的
-难度切换、HUD 在什么设备上都不会被压住。两个变量只在品牌行上生效，不影响其余布局。
+平台没有公开这组数字，取值来自调试台绘制同一组按钮时的实现。因为整条顶栏都在悬浮区
+**下方**，纵向留够了就不需要再做横向避让——顶栏右端的「挑战」按钮可以直接顶到右边距。
 
 ## 目录结构
 
 ```
 index.html            页面结构（HUD / 终端屏幕 / 密码显示区 / 键盘 / 结算页 / 对照表）
 src/morse.js          摩斯数字表、编解码、Web Audio 播放器
-src/challenge.js      四种模式配置、榜单分数编解码、成绩比较
+src/challenge.js      两种模式配置、榜单分数编解码、成绩比较
 src/leaderboard.js    cloud.leaderboard 封装与错误降级
 src/viewport.js       宿主安全区与悬浮按钮避让 → CSS 变量
 src/main.js           挑战流程、计时、本地记录、结算与提交

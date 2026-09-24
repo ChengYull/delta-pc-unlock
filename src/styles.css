@@ -35,9 +35,9 @@
 
   /* 宿主悬浮按钮的占位。状态栏之下、右上角浮着一组「更多 / 分享」按钮，
      平台没有公开它的尺寸，这里取调试台绘制同一组按钮时的实现：
-     相对状态栏底部再往下 6px、整体 87 × 32、右边距 7。 */
+     相对状态栏底部再往下 6px、整体 87 × 32、右边距 7。
+     顶栏整条都排在它下方，所以只需要知道纵向要留多少。 */
   --host-actions-band: 38px; /* 6 + 32：状态栏之下需要让开的高度 */
-  --host-actions-width: 94px; /* 87 + 7：横向占位，含右边距 */
 
   /* 摩斯字形：每个符号（点或杠）占用同样宽度的格子 --morse-cell，格子之间留 --morse-gap。
      符号在格子里居中绘制，所以一行摩斯的宽度只由符号个数决定，不会因为点数多就变短。 */
@@ -96,9 +96,9 @@ body {
   gap: 14px;
   width: min(100%, 520px);
   margin: 0 auto;
-  /* 顶部只让开状态栏，右上角的悬浮按钮由 .brand 自己绕开（见下）。
-     env() 与宿主实测值取大者：真机上 env() 有值，调试台里只有宿主知道。 */
-  padding-top: calc(max(env(safe-area-inset-top, 0px), var(--safe-top)) + 16px);
+  /* 顶部先让开状态栏，再让开宿主在右上角浮的那组「更多 / 分享」按钮。
+     整条顶栏（标题 + 难度）都排在悬浮区下方，所以不需要再做横向避让。 */
+  padding-top: calc(max(env(safe-area-inset-top, 0px), var(--safe-top)) + var(--host-actions-band) + 16px);
   padding-right: calc(max(env(safe-area-inset-right, 0px), var(--safe-right)) + 16px);
   padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom)) + 24px);
   padding-left: calc(max(env(safe-area-inset-left, 0px), var(--safe-left)) + 16px);
@@ -107,19 +107,18 @@ body {
 /* ------------------------------------------------------------------ 顶栏 */
 
 .topbar {
-  display: grid;
-  gap: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
 }
 
 .brand {
   display: flex;
+  min-width: 0;
   gap: 12px;
   align-items: center;
-  /* 宿主的「更多 / 分享」按钮浮在状态栏之下的右上角，和品牌行同一高度：
-     右侧留出它的宽度（文字超了省略号，不会钻到按钮底下），整行再撑到它的下沿，
-     这样紧跟其后的难度切换、HUD 怎么排都不会被压住。 */
-  min-height: var(--host-actions-band);
-  padding-right: var(--host-actions-width);
 }
 
 .brand__mark {
@@ -174,13 +173,14 @@ body {
 }
 
 .chips {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  display: flex;
+  flex: none;
   gap: 7px;
 }
 
 .chip {
   min-height: 36px;
+  padding: 0 10px;
   border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--ink-soft);
@@ -188,6 +188,7 @@ body {
   font: inherit;
   font-size: 13px;
   font-weight: 600;
+  white-space: nowrap;
   cursor: pointer;
   transition:
     background-color 140ms ease,
@@ -946,6 +947,20 @@ body {
 @media (max-width: 400px) {
   .app {
     gap: 11px;
+  }
+
+  /* 窄屏上顶栏是「标题 + 两个难度」共处一行，先把间距和字号的余量让出来，
+     免得标题被省略号截断。 */
+  .topbar {
+    gap: 8px;
+  }
+
+  .brand {
+    gap: 9px;
+  }
+
+  .chips {
+    gap: 6px;
   }
 
   .brand__title {
