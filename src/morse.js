@@ -41,13 +41,30 @@ export function decodeMorse(morse) {
   return DIGIT_BY_MORSE[morse];
 }
 
+/** 密码数字的取值池，0-9。 */
+const DIGIT_POOL = Object.freeze([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+
 /**
- * 生成一台上锁电脑的密码。
- * @param {number} length 密码位数，默认 3 位。
+ * 生成一台上锁电脑的密码，**各位数字互不相同**。
+ *
+ * 去重的原因：同一位数字重复出现时，两行摩斯会长得一模一样，玩家只要发现「这两行一样」
+ * 就少译一位，难度被稀释；而且重复位会让可能的密码从 10³ 缩到更少。
+ *
+ * 实现用**不放回抽样**（洗牌取前 n 个），不是「随机到不重复为止」的循环重试——
+ * 重试在 n 接近 10 时命中率越来越低，期望轮数会失控。
+ *
+ * @param {number} length 密码位数，默认 3 位；超过 10 时按 10 处理（数字池装不下更多）。
  * @returns {number[]}
  */
 export function randomCode(length = 3) {
-  return Array.from({ length }, () => Math.floor(Math.random() * 10));
+  const size = Math.min(Math.max(Math.trunc(length) || 0, 0), DIGIT_POOL.length);
+  const pool = DIGIT_POOL.slice();
+  // 部分 Fisher-Yates：只洗前 size 个位置，剩下的不动。
+  for (let i = 0; i < size; i += 1) {
+    const j = i + Math.floor(Math.random() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, size);
 }
 
 /** 单点时长（秒）。取 90ms，接近游戏里紧凑的滴答节奏。 */
