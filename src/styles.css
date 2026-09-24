@@ -36,8 +36,9 @@
   /* 宿主悬浮按钮的占位。状态栏之下、右上角浮着一组「更多 / 分享」按钮，
      平台没有公开它的尺寸，这里取调试台绘制同一组按钮时的实现：
      相对状态栏底部再往下 6px、整体 87 × 32、右边距 7。
-     顶栏整条都排在它下方，所以只需要知道纵向要留多少。 */
+     顶栏要和它同处一行，所以纵向、横向的量都得知道。 */
   --host-actions-band: 38px; /* 6 + 32：状态栏之下需要让开的高度 */
+  --host-actions-width: 94px; /* 87 + 7：横向占位，含右边距 */
 
   /* 摩斯字形：每个符号（点或杠）占用同样宽度的格子 --morse-cell，格子之间留 --morse-gap。
      符号在格子里居中绘制，所以一行摩斯的宽度只由符号个数决定，不会因为点数多就变短。 */
@@ -96,9 +97,9 @@ body {
   gap: 14px;
   width: min(100%, 520px);
   margin: 0 auto;
-  /* 顶部先让开状态栏，再让开宿主在右上角浮的那组「更多 / 分享」按钮。
-     整条顶栏（标题 + 难度）都排在悬浮区下方，所以不需要再做横向避让。 */
-  padding-top: calc(max(env(safe-area-inset-top, 0px), var(--safe-top)) + var(--host-actions-band) + 16px);
+  /* 顶部只让开状态栏；右上角悬浮按钮与顶栏同处一行，由 .topbar 自己绕开（见下）。
+     env() 与宿主实测值取大者：真机上 env() 有值，调试台里只有宿主知道。 */
+  padding-top: calc(max(env(safe-area-inset-top, 0px), var(--safe-top)) + 16px);
   padding-right: calc(max(env(safe-area-inset-right, 0px), var(--safe-right)) + 16px);
   padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom)) + 24px);
   padding-left: calc(max(env(safe-area-inset-left, 0px), var(--safe-left)) + 16px);
@@ -112,6 +113,11 @@ body {
   align-items: center;
   justify-content: space-between;
   min-width: 0;
+  /* 顶栏和宿主的「更多 / 分享」按钮同处一行：右侧整块留空，难度按钮不越过它；
+     行高撑到悬浮区下沿，后面接的 HUD、终端屏幕就一定在它下面。
+     标题与副标题因此都要短（见 index.html 的 .brand__text），不然会被省略号截断。 */
+  min-height: var(--host-actions-band);
+  padding-right: var(--host-actions-width);
 }
 
 .brand {
@@ -180,7 +186,7 @@ body {
 
 .chip {
   min-height: 36px;
-  padding: 0 10px;
+  padding: 0 9px;
   border: 1px solid var(--line);
   border-radius: 9px;
   color: var(--ink-soft);
