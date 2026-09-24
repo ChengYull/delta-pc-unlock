@@ -6,6 +6,7 @@
   "heybox": {
     "miniProgramId": "01a0c9f5-0bb7-709d-bf49-776164180e6e",
     "name": "三角洲电脑保险解锁模拟器",
+    "category": "game",
     "icon": "assets/icon.png",
     "coverImages": [
       "assets/cover.png"
@@ -47,7 +48,7 @@
     "node": ">=22.20.0"
   },
   "dependencies": {
-    "@heybox/hb-sdk": "^0.8.2"
+    "@heybox/hb-sdk": "^0.8.3"
   },
   "devDependencies": {
     "vite": "^8.0.12"
