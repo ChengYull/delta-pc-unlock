@@ -186,14 +186,15 @@ function bindResize(readWindowInfo, root) {
 export async function syncViewportInsets(readWindowInfo, root = document.documentElement) {
   try {
     const info = await readWindowInfo();
-    const scale = resolveUnitScale(info, viewportWidth());
+    const width = viewportWidth();
+    const scale = resolveUnitScale(info, width);
     if (scale !== 1) {
       console.info(
-        `[delta-unlock] 宿主按物理像素回传窗口几何（窗口宽 ${info?.windowWidth} / 视口宽 ${viewportWidth()}），` +
+        `[delta-unlock] 宿主按物理像素回传窗口几何（窗口宽 ${info?.windowWidth} / 视口宽 ${width}），` +
           `已按 ${scale.toFixed(2)} 倍换算成 CSS 像素`,
       );
     }
-    const insets = computeInsets(info, viewportWidth());
+    const insets = computeInsets(info, width);
     applyInsets(insets, root);
     bindResize(readWindowInfo, root);
     return insets;
