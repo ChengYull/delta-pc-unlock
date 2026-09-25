@@ -27,8 +27,9 @@
 
   /* 宿主注入的几何信息，由 src/viewport.js 在启动时写入；读不到时退回 env()
      （真机 WebView 里 env() 本身有值，桌面调试台恒为 0，所以必须靠宿主实测值补齐）。
-     顶部**以宿主为准**：env() 在部分 WebView 里会把宿主自己的顶部栏也算进来，
-     实测能把内容往下顶掉一整条状态栏的高度，所以只有宿主没回话时才用它。
+     顶部**以宿主为准**：`--safe-top` 是「状态栏下沿 = 宿主那条悬浮栏的上沿」，
+     已经减掉了宿主自己那条栏（见 viewport.js 的 HOST_TOP_BAND）。
+     env() 在部分 WebView 里会把宿主自己那条栏也算进来，所以只在宿主没回话时才用。
      其余三边没有第二个数据源，样式里取「宿主值 / env() 的较大者」。 */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: 0px;
@@ -99,9 +100,10 @@ body {
   gap: 14px;
   width: min(100%, 520px);
   margin: 0 auto;
-  /* 顶部只让开状态栏；右上角悬浮按钮与顶栏同处一行，由 .topbar 自己绕开（见下）。
-     顶部直接吃 --safe-top：它已经是「宿主实测值，或宿主没回话时的 env()」。 */
-  padding-top: calc(var(--safe-top) + 16px);
+  /* 顶栏从状态栏下沿开始，正好压在宿主那条悬浮栏上：`.topbar` 的 min-height
+     就是那条栏的高度，右半边再靠 padding-right 让开按钮。不要再往上加间距——
+     加多少，顶栏就往下掉多少，顶部就会空出一段。 */
+  padding-top: var(--safe-top);
   padding-right: calc(max(env(safe-area-inset-right, 0px), var(--safe-right)) + 16px);
   padding-bottom: calc(max(env(safe-area-inset-bottom, 0px), var(--safe-bottom)) + 24px);
   padding-left: calc(max(env(safe-area-inset-left, 0px), var(--safe-left)) + 16px);
