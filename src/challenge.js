@@ -1,13 +1,28 @@
 /**
  * 挑战配置与计分。
  *
- * 两种模式分两类：
+ * 三种模式分三类：
  *   - 练习：单次破译，不计成绩，不写榜单。
- *   - 挑战：连续 15 轮破译，结算后按「破译数优先、总时间次之」写入榜单。
+ *   - 挑战：连续 15 轮破译，每轮限时 5 秒，结算后按「破译数优先、总时间次之」写入榜单。
+ *   - 音频：连续 5 轮破译，**不限时**，只看听力——每轮的摩斯只以声音给出（最多 3 遍），
+ *     界面上不显示点杠图案。破译数优先、总时间次之，同样上榜（独立榜单）。
  */
 
 /** 每轮密码位数：三角洲行动的电脑保险固定 3 位。 */
 export const CODE_LENGTH = 3;
+
+/**
+ * 音频模式每轮的播放遍数。
+ * 这是**上限**：播放过程中键盘可用，玩家抢答出 3 位就立即判定并掐掉剩余播放，
+ * 所以手快的人听一半也能拿分——音频榜按总时间排序，抢答省下的时间是实打实的优势。
+ */
+export const AUDIO_REPEATS = 3;
+
+/** 音频模式：位与位之间的停顿（位内部的符号间留白由播放器自己安排）。 */
+export const AUDIO_LINE_GAP_MS = 300;
+
+/** 音频模式：两遍之间的停顿，比分位停顿长，让玩家听得出「这一遍播完了」。 */
+export const AUDIO_PASS_GAP_MS = 700;
 
 /**
  * @typedef {object} ChallengeConfig
@@ -17,6 +32,7 @@ export const CODE_LENGTH = 3;
  * @property {number} rounds        一次挑战包含的破译轮数
  * @property {number} limitMs       单轮限时毫秒，0 表示不限时
  * @property {string|null} leaderboardKey 对应榜单 key，null 表示不计榜
+ * @property {boolean} [audioOnly]  音频模式专用：隐藏摩斯图案与「试听」，改播振幅条
  * @property {string} description   待机时展示的一句话说明。
  *   显示在终端屏幕底部的 `.screen__foot`（11.5px 等宽，全宽字符按 1em 算），
  *   要保证在最小窗口 360px 下**不折行**：可用宽度约 298px，也就是**最多 22 个全宽字符**
@@ -45,10 +61,22 @@ export const CHALLENGES = {
     leaderboardKey: 'expert_challenge',
     description: '15 次破译 · 每次限时 5 秒 · 参与挑战排行榜',
   },
+  // 音频榜是新资源，id 与榜单 key 从建立之初就叫 audio / audio_challenge。
+  // 不限时是刻意的：这一模式考的是听力，不是手速；总时间只用来给同分的人排序。
+  audio: {
+    id: 'audio',
+    label: '音频挑战',
+    chip: '音频',
+    rounds: 5,
+    limitMs: 0,
+    leaderboardKey: 'audio_challenge',
+    audioOnly: true,
+    description: '5 次破译 · 每次不限时 · 参与音频排行榜',
+  },
 };
 
 /** 难度按钮的展示顺序。 */
-export const CHALLENGE_ORDER = ['practice', 'expert'];
+export const CHALLENGE_ORDER = ['practice', 'expert', 'audio'];
 
 /**
  * 榜单只有一个数值 `score` 参与排序，`extra` 不参与排序，所以把两项编码进一个数：
@@ -57,7 +85,8 @@ export const CHALLENGE_ORDER = ['practice', 'expert'];
  *
  * 破译数多者恒胜出；破译数相同时总时间短者胜。最大值约 1.6e7，远低于安全整数上限。
  * 总毫秒上限取 999_999（约 16.6 分钟），超过则夹取——专家挑战封顶只有 75 秒，
- * 正常不可能触及，这里只为保证编码可逆。
+ * 音频挑战不限时但最快也要 3 遍播报（约 40 秒），正常都不可能触及，
+ * 这里只为保证编码可逆；真要有人磨到 16 分钟以上，成绩按 999_999ms 计。
  */
 export const SCORE_SCALE = 1_000_000;
 const MAX_TOTAL_MS = SCORE_SCALE - 1;

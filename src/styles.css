@@ -285,12 +285,20 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* 状态胶囊里的字一长就会把这一行挤成两行（终端屏整体长高 13px，
+   下面的操作行被顶出首屏）。所以：标签先让位（省略号），状态永不换行。
+   状态文案本身也要短——音频模式播报中写的是「播放 1/3 遍」而不是「音频播放中 · 第 1/3 遍」。 */
 .screen__tag {
+  min-width: 0;
+  overflow: hidden;
   color: var(--scr-ink-dim);
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .screen__meta {
   display: inline-flex;
+  flex: none;
   gap: 8px;
   align-items: center;
 }
@@ -312,6 +320,7 @@ body {
   border-radius: 999px;
   color: var(--scr-ink);
   background: rgba(108, 255, 176, 0.08);
+  white-space: nowrap;
 }
 
 /* 单轮结果的成功 / 失败配色挂在 data-outcome 上：
@@ -390,6 +399,67 @@ body {
   color: var(--scr-ink-dim);
   filter: none;
   opacity: 0.45;
+}
+
+/* -------------------------------------------- 音频模式：摩斯位换成振幅条 */
+
+/* 第 2 列里同时放了「点杠图案」和「振幅条」，按模式二选一显示。
+   两者共用这一格，所以信号行的四列结构不用动。 */
+.signal__cell {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+}
+
+.signal__cell > .signal__morse {
+  flex: 1 1 auto;
+}
+
+/* 音频模式：点杠图案就是答案，「试听」留着等于无限重听，两个都收起来。 */
+.screen.is-audio .signal__morse,
+.screen.is-audio .signal__listen {
+  display: none;
+}
+
+.signal__wave {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 2px;
+  min-width: 0;
+  height: 22px;
+  align-items: center;
+}
+
+/* 静默时的基准线。没有它，竖条缩到 0 后整行看起来是空的；
+   有了它就是一个「待机中的电平表」，也不会像摩斯图案那样被误读成点杠。 */
+.signal__wave::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: rgba(108, 255, 176, 0.22);
+}
+
+/* 一根竖条的高度由播放电平（--amp，0-1）决定，形状是「中间高两边低」的包络。
+   静默时缩到 0（只留上面那条基准线），不画任何形似点杠的短线。 */
+.signal__bar {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 2px;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--scr-ink) 0%, rgba(108, 255, 176, 0.32) 100%);
+  transform: scaleY(var(--amp, 0));
+  transform-origin: center;
+}
+
+/* 正在播报的那一行：边框和底色亮起来，让玩家知道现在听的是哪一位。 */
+.signal.is-playing {
+  border-color: rgba(108, 255, 176, 0.5);
+  background: rgba(108, 255, 176, 0.07);
 }
 
 .morse {
@@ -935,31 +1005,38 @@ body {
 /* ------------------------------------------------------------------ 小屏适配 */
 
 @media (max-width: 400px) {
+  /* 窄屏纵向预算很紧：360×787 的真机上，下面这一串改动合起来要让出约 25px，
+     「开始挑战」那一行才能落在首屏内（实测原布局按钮底部 803.5px > 可见高 787px）。
+     改动量是按「密码区 100px → 82px + 区块间距」配的，加大密码槽会重新顶出可视区。 */
   .app {
-    gap: 11px;
+    gap: 10px;
   }
 
-  /* 窄屏上顶栏是「标题 + 两个难度」共处一行，先把间距和字号的余量让出来，
-     免得标题被省略号截断。 */
-  .topbar {
-    gap: 8px;
+  /* 顶栏的宽度与字号见文件末尾的 440px 断点：那里要同时塞下三个模式按钮，
+     单独列在一处，免得两段规则互相覆盖。 */
+
+  /* 密码输入框是这页纵向最「软」的一块（没有可读内容要保全），先从它身上让位。 */
+  .digits {
+    gap: 7px;
+    padding: 10px;
   }
 
-  .brand {
-    gap: 9px;
-  }
-
-  .chips {
-    gap: 6px;
-  }
-
-  .brand__title {
-    font-size: 17px;
+  /* 槽高被压到 40px 后，原来那套宽度（3 格占满 300px → 单格 93×40）就扁得难看。
+     这里把间隔从 10 拉到 24、整行收到 248px：单格 67×40、宽高比 1.67，
+     整行在密码面板里左右各留 30px（面板内宽 308）。行宽再放宽就该动单格宽度了，
+     那样比例又会变扁——想更靠边就加 max-width 但别超过 260（对应单格 70 / 隔 24）。 */
+  .slots {
+    gap: 24px;
+    max-width: 248px;
   }
 
   .slot {
-    height: 52px;
-    font-size: 23px;
+    height: 40px;
+    font-size: 21px;
+  }
+
+  .entry {
+    gap: 9px;
   }
 
   .key {
@@ -976,6 +1053,66 @@ body {
     --morse-cell: 13px;
     --morse-gap: 5px;
     --morse-dash-length: 10px;
+  }
+}
+
+/*
+ * 顶栏在 440px 以下整体收紧，并把三个模式按钮连成分段控件。
+ *
+ * 原因：360px 窗口下顶栏可用区只有 234px（右侧 94px 必须让给宿主自带的「更多 / 分享」
+ * 悬浮按钮）。原来两个 chip 用掉 224px，加上第三个「音频」还差约 42px，
+ * 只能从图标、标题字号、chip 内边距和间隙里一起省——实测这套组合在 360px 下余 7px，
+ * 标题与副标题都不会被省略号截断。**改这些数值前先重新量一遍**：余量本来就只有个位数。
+ *
+ * 440 是断点：iPhone 16 Pro Max 那档调试档案正好 440，再宽一点用原来的药丸 chip 也放得下
+ * （440px 时可用区 314px，三个 chip 共 278px）。
+ * 这一段必须排在 400px 那个断点之后，才能在 ≤400 时覆盖掉那边的顶栏规则。
+ */
+@media (max-width: 440px) {
+  .topbar {
+    gap: 6px;
+  }
+
+  .brand {
+    gap: 9px;
+  }
+
+  .brand__mark {
+    width: 30px;
+    height: 30px;
+  }
+
+  .brand__title {
+    font-size: 16px;
+  }
+
+  /* 三个 chip 连成一段：无间隙、共享分隔线，只在外侧留圆角。 */
+  .chips {
+    gap: 0;
+  }
+
+  .chip {
+    padding: 0 5px;
+    border-radius: 0;
+    font-size: 12px;
+  }
+
+  .chip + .chip {
+    margin-left: -1px;
+  }
+
+  .chip:first-child {
+    border-radius: 9px 0 0 9px;
+  }
+
+  .chip:last-child {
+    border-radius: 0 9px 9px 0;
+  }
+
+  /* 选中项要在共享边框上压住相邻的两条线。 */
+  .chip.is-active {
+    position: relative;
+    z-index: 1;
   }
 }
 

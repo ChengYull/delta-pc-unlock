@@ -1,6 +1,9 @@
 import hbSDK, { HbMiniProgramSDKError } from '@heybox/hb-sdk';
 import './styles.css';
 import {
+  AUDIO_LINE_GAP_MS,
+  AUDIO_PASS_GAP_MS,
+  AUDIO_REPEATS,
   CHALLENGES,
   CHALLENGE_ORDER,
   CODE_LENGTH,
@@ -10,11 +13,20 @@ import {
   makeResult,
 } from './challenge.js';
 import { formatRank, loadBoard, loadMyEntry, loadMyProfile, submitResult } from './leaderboard.js';
-import { MORSE_BY_DIGIT, createMorsePlayer, randomCode } from './morse.js';
+import { MORSE_BY_DIGIT, createMorsePlayer, playMorseSequence, randomCode } from './morse.js';
 import { syncViewportInsets } from './viewport.js';
 
 /** 密码破译线索表的展示顺序，与游戏一致：1-9 再 0。 */
 const TABLE_ORDER = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+
+/**
+ * 音频模式振幅条的竖条根数。纯观感参数，不参与任何判定。
+ */
+const WAVE_BAR_COUNT = 13;
+
+/** 电平平滑：起音快（看得见音头），收音慢一点，免得条子发抖。 */
+const LEVEL_ATTACK = 0.55;
+const LEVEL_RELEASE = 0.16;
 
 /** 输满 3 位后短暂停留，让最后一位按键有可见反馈，再判定。 */
 const VERIFY_DELAY_MS = 160;
@@ -100,6 +112,16 @@ const state = {
   plays: {},
   /** 榜单请求序号：切换难度后让在途的旧请求作废，避免旧榜单覆盖新榜单。 */
   boardToken: 0,
+  /**
+   * 音频模式的状态：
+   *   playingLine  正在播报第几行（0-based），-1 表示没在播
+   *   audioToken   播报令牌；抢答/放弃/切难度时自增，让在途的播放循环自然退出
+   *   levelShown   平滑后的电平，直接铺给振幅条
+   */
+  playingLine: -1,
+  audioToken: 0,
+  levelShown: 0,
+  levelRaf: 0,
 };
 
 const morsePlayer = createMorsePlayer();
@@ -273,12 +295,29 @@ function buildSignalRows() {
     const row = document.createElement('li');
     row.className = 'signal';
 
+    const cell = document.createElement('span');
+    cell.className = 'signal__cell';
+
     const idx = document.createElement('span');
     idx.className = 'signal__idx';
     idx.textContent = String(index + 1).padStart(2, '0');
 
     const morse = document.createElement('span');
     morse.className = 'signal__morse';
+
+    // 音频模式拿振幅条替掉点杠图案：两者共用这个格子，按模式二选一显示。
+    // 条子的高度只由播放电平决定，不渲染符号形状。
+    const wave = document.createElement('span');
+    wave.className = 'signal__wave';
+    wave.hidden = true;
+    const bars = [];
+    for (let bar = 0; bar < WAVE_BAR_COUNT; bar += 1) {
+      const stick = document.createElement('i');
+      stick.className = 'signal__bar';
+      stick.style.setProperty('--amp', '0');
+      wave.append(stick);
+      bars.push(stick);
+    }
 
     const listen = document.createElement('button');
     listen.type = 'button';
@@ -295,9 +334,10 @@ function buildSignalRows() {
     const slot = document.createElement('span');
     slot.className = 'signal__slot';
 
-    row.append(idx, morse, listen, slot);
+    cell.append(morse, wave);
+    row.append(idx, cell, listen, slot);
     dom.signals.append(row);
-    signalRows.push({ row, morse, listen, slot });
+    signalRows.push({ row, morse, wave, bars, listen, slot });
   }
 }
 
@@ -355,6 +395,116 @@ function renderSignals() {
       refs.slot.dataset.tone = 'filled';
     }
   });
+}
+
+/**
+ * 音频模式与「看图」模式的界面差异集中在这里切换。
+ *
+ * 音频模式下把点杠图案和每行的「试听」按钮都藏起来：
+ * 图案本身就是答案；「试听」留着等于无限次重听，每轮 3 遍的限制就废了。
+ * 换成振幅条——它只跟播放电平走，玩家能从亮灭节奏里读出长短是明知的设计取舍
+ * （对听力考核是削弱，但视觉上看得出来「正在播哪一位」是这一模式的主要反馈）。
+ */
+function renderAudioMode() {
+  const on = Boolean(currentConfig().audioOnly);
+  dom.screen.classList.toggle('is-audio', on);
+  for (const refs of signalRows) {
+    refs.wave.hidden = !on;
+  }
+  if (!on) {
+    // 音频模式下振幅条归电平循环管，这里别去动它，否则每次重渲染都会闪一下。
+    paintWave(-1, 0);
+  }
+}
+
+/** 把平滑后的电平铺到每一根竖条上：中间高、两边收窄，看起来像一段波形包络。 */
+function paintWave(playingLine, level) {
+  const span = WAVE_BAR_COUNT - 1;
+  signalRows.forEach((refs, index) => {
+    const active = index === playingLine && level > 0;
+    refs.row.classList.toggle('is-playing', index === playingLine);
+    refs.bars.forEach((bar, barIndex) => {
+      // 0.32 的地板让包络两端也立得起来，不然两侧的条几乎看不见。
+      // 静默时整排缩到 0，只留 CSS 里那条基准线。
+      const shape = active ? 0.32 + 0.68 * Math.sin((barIndex / span) * Math.PI) : 0;
+      bar.style.setProperty('--amp', (level * shape).toFixed(3));
+    });
+  });
+}
+
+/**
+ * 音频播报一轮：最多 `AUDIO_REPEATS` 遍，每遍按位顺序播放。
+ *
+ * 播放过程中键盘是可用的，玩家抢答出 3 位就立刻判定（`stopAudio()` 把 token 顶掉），
+ * 所以手快的人听一遍也能拿分，`playMorseSequence` 里每次 await 之后都会检查令牌。
+ *
+ * @param {number[]} code
+ * @param {number} token 本次播报的令牌，与 `state.audioToken` 不一致时立刻收工。
+ */
+async function playAudioRound(code, token) {
+  const lines = code.map((digit) => MORSE_BY_DIGIT[digit]);
+  const cancelled = () => token !== state.audioToken || state.phase !== 'running';
+
+  for (let pass = 1; pass <= AUDIO_REPEATS; pass += 1) {
+    if (cancelled()) {
+      return;
+    }
+    setStatus(`播放 ${pass}/${AUDIO_REPEATS} 遍`);
+    const played = await playMorseSequence(morsePlayer, lines, {
+      gapMs: AUDIO_LINE_GAP_MS,
+      onLine: (index) => {
+        state.playingLine = index;
+      },
+      isCancelled: cancelled,
+    });
+    if (!played) {
+      return;
+    }
+    if (pass < AUDIO_REPEATS) {
+      await new Promise((resolve) => window.setTimeout(resolve, AUDIO_PASS_GAP_MS));
+    }
+  }
+
+  if (cancelled()) {
+    return;
+  }
+  // 播完 3 遍就停在这儿等玩家作答，不再计时（音频模式本来就不限时）。
+  state.playingLine = -1;
+  setStatus('请作答');
+}
+
+/**
+ * 掐掉正在播放的音频。
+ * token 自增让在途的播放循环自然退出（它每次 await 后都会比对），
+ * 不用去 track 定时器；`morsePlayer.stop()` 把当前这一声立刻收掉。
+ */
+function stopAudio() {
+  state.audioToken += 1;
+  state.playingLine = -1;
+  state.levelShown = 0;
+  morsePlayer.stop();
+  paintWave(-1, 0);
+}
+
+/** 按真实电平驱动振幅条；音频不可用时 `morsePlayer.level()` 会退化成按调度时间线给 0/1。 */
+function startWaveLoop() {
+  if (state.levelRaf) {
+    return;
+  }
+  const step = () => {
+    if (state.phase !== 'running' || !currentConfig().audioOnly) {
+      state.levelRaf = 0;
+      state.levelShown = 0;
+      paintWave(-1, 0);
+      return;
+    }
+    const raw = state.playingLine >= 0 ? morsePlayer.level() : 0;
+    const rate = raw > state.levelShown ? LEVEL_ATTACK : LEVEL_RELEASE;
+    state.levelShown = Math.abs(raw - state.levelShown) < 0.01 ? raw : state.levelShown + (raw - state.levelShown) * rate;
+    paintWave(state.playingLine, state.levelShown);
+    state.levelRaf = window.requestAnimationFrame(step);
+  };
+  state.levelRaf = window.requestAnimationFrame(step);
 }
 
 function renderSlots() {
@@ -453,6 +603,7 @@ function markTableHits() {
 function renderAll() {
   renderChips();
   renderSignals();
+  renderAudioMode();
   renderSlots();
   renderHud();
   renderMeter();
@@ -504,7 +655,7 @@ function tick() {
 /** 清空一次挑战的全部进度（不动本地记录）。 */
 function resetRun() {
   clearTimers();
-  morsePlayer.stop();
+  stopAudio();
   state.code = [];
   state.entry = [];
   state.round = 1;
@@ -548,12 +699,25 @@ function startRound() {
   state.phase = 'running';
   dom.screen.dataset.outcome = '';
 
-  setStatus('破译中');
-  setFoot(`第 ${state.round}/${config.rounds} 轮 · 对照线索输入 3 位密码`);
+  // 状态胶囊里的字必须短：它一换行，终端屏就长高 13px，操作行会被顶出首屏。
+  setStatus(config.audioOnly ? `播放 1/${AUDIO_REPEATS} 遍` : '破译中');
+  setFoot(
+    config.audioOnly
+      ? `第 ${state.round}/${config.rounds} 轮 · 听音输入 3 位密码`
+      : `第 ${state.round}/${config.rounds} 轮 · 对照线索输入 3 位密码`,
+  );
   setKeypadEnabled(true);
   setMainButton('放弃', false);
   renderAll();
   startRoundTimer();
+
+  // 音频模式：先播报再作答。这里的调用链一路同步到 `morsePlayer.play()`，
+  // 还留在「开始挑战」那一下点击的手势里，AudioContext 才允许出声。
+  if (config.audioOnly) {
+    startWaveLoop();
+    state.audioToken += 1;
+    playAudioRound(state.code, state.audioToken);
+  }
 }
 
 function judge() {
@@ -574,19 +738,21 @@ function recordPracticeRound(ok, roundMs) {
   }
 }
 
-/** 练习结果文案：本次成绩 + 会话累计。 */
+/**
+ * 练习结果文案：本次成绩 + 继续提示。
+ *
+ * 会话累计（已破译 / 总用时 / 最好）**不写在这里**——HUD 已经有三格在显示同一组数，
+ * 重复写会把这一行撑到 400px 以上，而 `.screen__foot` 在 360px 窗口下只有 298px 可用，
+ * 于是折成两行、把终端屏下面的组件整体往下顶（实测折行时高度从 17px 涨到 35px）。
+ * 这里只保留 HUD 里没有的信息：本轮的正确答案与本轮用时。
+ */
 function practiceFoot(ok, roundMs) {
-  const { decoded, bestMs } = state.practice;
   const parts = [];
   if (!ok) {
     parts.push(`正确密码 ${state.code.join('')}`);
   }
   parts.push(`本次 ${formatSeconds(roundMs)}`);
-  parts.push(`本次会话已破译 ${decoded} 台`);
-  if (bestMs > 0) {
-    parts.push(`最快单次 ${formatSeconds(bestMs)}`);
-  }
-  parts.push('点「再来一次」继续');
+  parts.push('点「再来一次」');
   return parts.join(' · ');
 }
 
@@ -597,6 +763,8 @@ function endRound(ok, reason) {
   const config = currentConfig();
   const isPractice = !config.leaderboardKey;
   stopRoundTimer();
+  // 抢答成功或答错都要立刻掐掉还没播完的音频，否则下一轮的播报会叠上来。
+  stopAudio();
 
   const roundMs = state.roundElapsedMs;
   state.roundTimes.push(roundMs);
@@ -893,7 +1061,7 @@ function selectMode(mode) {
   setStatus('待机');
   setFoot(
     wasRunning
-      ? `已切换到${CHALLENGES[mode].label}，本次进度未记录 · ${CHALLENGES[mode].description}`
+      ? `已切换到${CHALLENGES[mode].label} · 本次进度未记录`
       : CHALLENGES[mode].description,
   );
   setKeypadEnabled(false);
