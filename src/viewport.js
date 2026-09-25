@@ -10,6 +10,12 @@
  * 本模块只做「几何 → CSS 变量」，不直接引用 SDK：读取方式由调用方传进来，
  * 这样换算逻辑是纯函数，能脱离浏览器直接测。
  *
+ * 两个坑都在这里收口：
+ *   1. 单位。文档说字段是逻辑像素，但部分 Android 机型上 Host 回传的是物理像素，
+ *      照 CSS 像素用会在顶栏上方多顶出一条状态栏的高度。靠 `window.innerWidth` 校正。
+ *   2. 语义。`safeArea` 四边是**边界坐标**不是内边距：左/上直接就是内边距，
+ *      右/下要用窗口尺寸减。
+ *
  * 样式侧只消费变量，不自己算：
  *   --safe-top / --safe-right / --safe-bottom / --safe-left
  *
@@ -25,6 +31,9 @@ const FALLBACK_INSET_LIMIT = 200;
 /** PC 窗口可以被用户拖拽，宿主不推尺寸变化，只能自己防抖重读。 */
 const RESIZE_DEBOUNCE_MS = 200;
 
+/** 宿主报告的窗口宽度比 WebView 视口宽度大出这个倍数，就认定整组数值是物理像素。 */
+const PHYSICAL_PIXEL_THRESHOLD = 1.5;
+
 /** 只认有限正数，其余（含 `undefined` / `NaN` / 字符串）统一归零。 */
 function positive(value) {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0;
@@ -36,23 +45,57 @@ function sizeOf(primary, fallback) {
 }
 
 /**
- * 安全区边界坐标 → 内边距。
+ * 判断宿主这组几何数值的单位，返回需要除掉的倍数。
  *
- * `safeArea` 的四个字段都是**边界坐标**（从窗口左/上边缘起算），不是内边距，
- * 右侧和底部要做减法。宿主补不出有效坐标时算出来会贴着整个窗口，那种情况归零：
- * 宁可少留白，也不能把一个窗口宽的内边距写进去。
+ * 文档说 `getWindowInfo()` 的字段都是逻辑像素，但部分 Android 机型上 Host 直接
+ * 透传原生像素：1080×2400 / DPR 3 的机器会把 28dp 的状态栏报成 `statusBarHeight = 84`。
+ * 照 CSS 像素用就会在顶栏上方多顶出一整条状态栏的高度（实测就是这样）。
  *
- * @param {unknown} edgeCoordinate
- * @param {number} windowSize
+ * WebView 自己的 `window.innerWidth` 是确定的 CSS 像素，拿宿主报告的窗口宽度一比
+ * 就知道：比值达到 `pixelRatio` 量级 → 这组数字全是物理像素，统一除回去；
+ * 比值 1 附近（PC 上最多差一个滚动条）→ 本来就是逻辑像素，不动。
+ *
+ * 之所以不直接用 `info.pixelRatio` 判断：低版本宿主未必回传这个字段（降级成 1），
+ * 而 `innerWidth` 任何版本都有。
+ *
+ * @param {unknown} info
+ * @param {unknown} viewportWidth WebView 视口宽度（CSS 像素），通常传 `window.innerWidth`
  */
-function coordinateToInset(edgeCoordinate, windowSize) {
-  const edge = positive(edgeCoordinate);
+export function resolveUnitScale(info, viewportWidth) {
+  const reported = sizeOf(info?.windowWidth, info?.screenWidth);
+  const reference = positive(viewportWidth);
+  if (!reported || !reference) {
+    return 1;
+  }
+  const ratio = reported / reference;
+  return ratio >= PHYSICAL_PIXEL_THRESHOLD ? ratio : 1;
+}
+
+/**
+ * 把内边距夹到可信范围：超过窗口四分之一、或者不是正数，一律归零。
+ * 宿主补不出有效坐标时算出来会贴着整个窗口，那种情况宁可少留白。
+ */
+function clampInset(inset, windowSize) {
+  const limit = windowSize ? windowSize * MAX_INSET_RATIO : FALLBACK_INSET_LIMIT;
+  return inset > 0 && inset <= limit ? inset : 0;
+}
+
+/** 左/上边界坐标**本身就是**内边距（从窗口左/上边缘起算），不做减法。 */
+function leadingEdgeInset(coordinate, scale, windowSize) {
+  return clampInset(positive(coordinate) / scale, windowSize);
+}
+
+/**
+ * 右/下边界坐标要翻成内边距：窗口尺寸减去边界。
+ * 窗口尺寸缺失时退回边界值本身，反正后面还有一层夹取兜底。
+ */
+function trailingEdgeInset(coordinate, scale, windowSize) {
+  const edge = positive(coordinate);
   if (edge === 0) {
     return 0;
   }
-  const limit = windowSize ? windowSize * MAX_INSET_RATIO : FALLBACK_INSET_LIMIT;
-  const inset = windowSize ? windowSize - edge : edge;
-  return inset > 0 && inset <= limit ? inset : 0;
+  const inset = windowSize ? windowSize - edge / scale : edge / scale;
+  return clampInset(inset, windowSize);
 }
 
 /**
@@ -62,23 +105,30 @@ function coordinateToInset(edgeCoordinate, windowSize) {
  * 后者在有刘海或灵动岛时更靠下，两个都得让开。
  *
  * @param {object} [info]
+ * @param {unknown} [viewportWidth] WebView 视口宽度，用于识别物理像素，见 `resolveUnitScale`
  * @returns {{ top: number, right: number, bottom: number, left: number }}
  */
-export function computeInsets(info) {
-  const windowWidth = sizeOf(info?.windowWidth, info?.screenWidth);
-  const windowHeight = sizeOf(info?.windowHeight, info?.screenHeight);
+export function computeInsets(info, viewportWidth) {
+  const scale = resolveUnitScale(info, viewportWidth);
+  const windowWidth = sizeOf(info?.windowWidth, info?.screenWidth) / scale;
+  const windowHeight = sizeOf(info?.windowHeight, info?.screenHeight) / scale;
   const safeArea = info?.safeArea ?? {};
+  const statusBarHeight = positive(info?.statusBarHeight) / scale;
 
   return {
-    top: Math.max(positive(info?.statusBarHeight), coordinateToInset(safeArea.top, windowHeight)),
-    right: coordinateToInset(safeArea.right, windowWidth),
-    bottom: coordinateToInset(safeArea.bottom, windowHeight),
-    left: coordinateToInset(safeArea.left, windowWidth),
+    top: Math.max(statusBarHeight, leadingEdgeInset(safeArea.top, scale, windowHeight)),
+    right: trailingEdgeInset(safeArea.right, scale, windowWidth),
+    bottom: trailingEdgeInset(safeArea.bottom, scale, windowHeight),
+    left: leadingEdgeInset(safeArea.left, scale, windowWidth),
   };
 }
 
 /**
  * 把内边距写进 CSS 变量。传 `root` 是为了让单测能在 Node 里塞一个假的样式表。
+ *
+ * 顶部为 0 时不是写 `0px` 而是写回 `env()`：宿主这一项读失败（文档里会降级成 0）
+ * 时，不能把刘海也一起丢掉。其余三边写 `0px` 即可，样式那边取的是两者较大者。
+ *
  * @param {{ top: number, right: number, bottom: number, left: number }} insets
  * @param {HTMLElement} [root]
  */
@@ -87,11 +137,23 @@ export function applyInsets(insets, root = document.documentElement) {
     return;
   }
   for (const [edge, value] of Object.entries(insets)) {
-    root.style.setProperty(`--safe-${edge}`, `${value}px`);
+    if (value > 0) {
+      root.style.setProperty(`--safe-${edge}`, `${value}px`);
+      continue;
+    }
+    root.style.setProperty(`--safe-${edge}`, edge === 'top' ? 'env(safe-area-inset-top, 0px)' : '0px');
   }
 }
 
 let resizeBound = false;
+
+/**
+ * WebView 自己的视口宽度（CSS 像素）。每次现读：PC 上用户拖动窗口会变，
+ * 而单位换算正是靠它和宿主报告的窗口宽度对齐。
+ */
+function viewportWidth() {
+  return typeof window === 'undefined' ? 0 : positive(window.innerWidth);
+}
 
 /** 窗口尺寸变了就重读一次；宿主不会推变化，只能自己监听。 */
 function bindResize(readWindowInfo, root) {
@@ -105,7 +167,7 @@ function bindResize(readWindowInfo, root) {
     window.clearTimeout(timer);
     timer = window.setTimeout(async () => {
       try {
-        applyInsets(computeInsets(await readWindowInfo()), root);
+        applyInsets(computeInsets(await readWindowInfo(), viewportWidth()), root);
       } catch {
         // 重读失败就保持上一次的几何信息，不动变量。
       }
@@ -123,7 +185,15 @@ function bindResize(readWindowInfo, root) {
  */
 export async function syncViewportInsets(readWindowInfo, root = document.documentElement) {
   try {
-    const insets = computeInsets(await readWindowInfo());
+    const info = await readWindowInfo();
+    const scale = resolveUnitScale(info, viewportWidth());
+    if (scale !== 1) {
+      console.info(
+        `[delta-unlock] 宿主按物理像素回传窗口几何（窗口宽 ${info?.windowWidth} / 视口宽 ${viewportWidth()}），` +
+          `已按 ${scale.toFixed(2)} 倍换算成 CSS 像素`,
+      );
+    }
+    const insets = computeInsets(info, viewportWidth());
     applyInsets(insets, root);
     bindResize(readWindowInfo, root);
     return insets;
